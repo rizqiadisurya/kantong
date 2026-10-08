@@ -4,6 +4,8 @@ Aplikasi pencatatan keuangan pribadi yang semudah chat: ketik `kopi susu 25rb`, 
 
 **Buka aplikasinya:** https://rizqiadisurya.github.io/kantong/
 
+Panduan menyiapkan login Google, Supabase, dan Netlify: lihat [SETUP.md](SETUP.md).
+
 ## Fitur
 - Ketik cepat: jumlah, kategori, dan catatan terisi otomatis
 - Banyak dompet (tunai, bank, e-wallet) dan transfer antar dompet
@@ -12,6 +14,7 @@ Aplikasi pencatatan keuangan pribadi yang semudah chat: ketik `kopi susu 25rb`, 
 - Target tabungan
 - Laporan bulanan dan tren 6 bulan
 - Ekspor CSV, cadangan & pulihkan (JSON)
+- Masuk dengan Google & sinkron antarperangkat (Supabase)
 
 ## Privasi
-Tidak ada akun dan tidak ada server. Semua data tersimpan di browser masing-masing pengguna.
+Bisa dipakai tanpa akun (data di browser). Masuk dengan Google untuk menyinkronkan catatan antarperangkat; data dikunci per pengguna dengan Row Level Security Supabase. Lihat [privasi.html](privasi.html).

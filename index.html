@@ -239,6 +239,14 @@ kbd{font-family:var(--f-body);font-size:12px;background:var(--surface-2);border:
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(92px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:13.5px;z-index:60;box-shadow:var(--shadow);display:flex;gap:12px;align-items:center;max-width:calc(100% - 32px)}
 .toast button{border:0;background:none;color:var(--bg);font-weight:800;text-decoration:underline}
 @media(min-width:900px){.toast{bottom:28px}}
+.acct{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-2);border-radius:12px;padding:10px 12px;min-width:0}
+.acct-who{display:flex;flex-direction:column;min-width:0;font-size:13px}
+.acct-who b,.acct-who span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-who span{color:var(--muted);font-size:12px}
+.acct-who b{color:var(--fg)}
+.btn.google{background:var(--surface);border:1.5px solid var(--line);color:var(--fg)}
+.btn.google:hover{border-color:var(--accent)}
+.side .foot a,.card a{color:var(--accent)}
 .loading{display:grid;place-items:center;min-height:60vh;color:var(--muted)}
 .muted{color:var(--muted)} .small{font-size:12.5px}
 .sp{display:flex;justify-content:space-between;gap:8px;align-items:center}
@@ -260,6 +268,7 @@ kbd{font-family:var(--f-body);font-size:12px;background:var(--surface-2);border:
 <div id="sheetRoot"></div>
 <div id="toastRoot"></div>
 
+<script src="config.js"></script>
 <script>
 (() => {
 "use strict";
@@ -432,75 +441,127 @@ const S = { state: null, months: {}, mode: "loading", demo: false, saving: 0 };
 const UI = { view: "home", month: curMonth(), f: { q: "", type: "all", cat: "", wallet: "" } };
 try { const v = localStorage.getItem("kantong.view"); if (v) UI.view = v; } catch (e) {}
 const LS_KEY = "kantong.data.v1";
-let db = null, stateRef = null, monthsCol = null, downloads = null;
+const CFG = window.KANTONG_CONFIG || {};
+const SUPA_ON = !!(CFG.supabaseUrl && CFG.supabaseAnonKey);
+let sb = null, me = null, downloads = null;
 let chain = Promise.resolve();
+S.synced = {}; S.syncedMonth = {};
 
 function loadLocal() {
   try { const raw = localStorage.getItem(LS_KEY); if (raw) { const d = JSON.parse(raw); return { state: normalize(d.state), months: d.months || {} }; } } catch (e) {}
   return null;
 }
-function saveLocal() { if (S.demo) return; try { localStorage.setItem(LS_KEY, JSON.stringify({ state: S.state, months: S.months })); } catch (e) { toast("Penyimpanan browser penuh atau diblokir."); } }
+function saveLocal() { if (S.demo || S.mode !== "local") return; try { localStorage.setItem(LS_KEY, JSON.stringify({ state: S.state, months: S.months })); } catch (e) { toast("Penyimpanan browser penuh atau diblokir."); } }
+const ok = r => { if (r && r.error) throw r.error; return r; };
 function persist(fn) {
   if (S.demo) return;
-  S.saving++;
-  chain = chain.then(() => S.mode === "cloud" ? fn() : saveLocal()).catch(e => { if (e && e.code === "invalid_argument" && S.mode === "cloud") return switchToLocal(); toast("Gagal menyimpan: " + (e && (e.message || e.code) || "coba lagi")); }).finally(() => { S.saving--; });
+  S.saving++; renderStatus();
+  chain = chain.then(() => S.mode === "supa" ? fn() : saveLocal())
+    .catch(e => toast("Gagal menyimpan ke akun. Periksa koneksi internet, lalu coba lagi. (" + (e && (e.message || e.code) || "galat") + ")"))
+    .finally(() => { S.saving--; renderStatus(); });
 }
 function saveState() {
   if (S.demo) return;
-  if (S.mode === "cloud") { const snap = clone(S.state); persist(() => stateRef.set(snap)); } else saveLocal();
+  if (S.mode === "supa") { const snap = clone(S.state); persist(() => sb.from("user_state").upsert({ user_id: me.id, data: snap, updated_at: new Date().toISOString() }).then(ok)); }
+  else saveLocal();
 }
 function saveMonth(k) {
   if (S.demo) return;
-  if (S.mode === "cloud") {
-    const doc = S.months[k]; const has = doc && Object.keys(doc.tx || {}).length;
-    const snap = has ? clone(doc) : null;
-    persist(() => has ? monthsCol.doc(k).set(snap) : monthsCol.doc(k).delete());
-  } else saveLocal();
+  if (S.mode === "supa") persist(() => syncMonth(k)); else saveLocal();
 }
 
-const unsubs = [];
-function switchToLocal() {
-  unsubs.splice(0).forEach(f => { try { f(); } catch (e) {} });
-  S.mode = "local";
-  const l = loadLocal();
-  if (l && !hasData()) { S.state = l.state; S.months = l.months; }
-  saveLocal(); render();
-  toast("Datamu disimpan di browser ini.");
-}
-async function boot() {
-  const c = window.claude;
-  if (c && typeof c.use === "function") {
-    try {
-      const [d, u] = await Promise.all([c.use("db"), c.use("user")]);
-      const id = u ? await u.id() : null;
-      let canWrite = null; try { canWrite = u ? await u.can("data.write") : null; } catch (e) {}
-      if (d && id && canWrite !== false) {
-        db = d; stateRef = db.doc(`data/users/${id}/state`); monthsCol = stateRef.collection("months");
-        S.mode = "cloud";
-        let gotState = false, gotMonths = false;
-        const ready = () => { if (gotState && gotMonths) render(); };
-        unsubs.push(stateRef.onSnapshot(s => {
-          S.cloudState = s.exists ? normalize(clone(s.data())) : null;
-          if (S.demo) return;
-          S.state = s.exists ? normalize(clone(s.data())) : (S.state || defaultState());
-          gotState = true; ready();
-        }, err => toast("Sinkronisasi terhenti. Muat ulang halaman.")));
-        unsubs.push(monthsCol.onSnapshot(q => {
-          const m = {}; q.docs.forEach(doc => { const v = clone(doc.data()); if (v && v.tx) m[doc.id] = v; });
-          S.cloudMonths = m;
-          if (S.demo) return;
-          S.months = m; gotMonths = true; ready();
-        }, err => toast("Sinkronisasi terhenti. Muat ulang halaman.")));
-        c.use("downloads").then(x => { downloads = x; }).catch(() => {});
-        return;
-      }
-      c.use("downloads").then(x => { downloads = x; }).catch(() => {});
-    } catch (e) {}
+/* Supabase rows <-> transactions */
+const toRow = t => ({ user_id: me.id, id: t.id, type: t.type, amount: Math.round(t.amount), cat: t.cat || null, wallet: t.wallet, to_wallet: t.to || null, date: t.date, note: t.note || "", at: t.at || 0, updated_at: new Date().toISOString() });
+const fromRow = r => ({ id: r.id, type: r.type, amount: Number(r.amount), cat: r.cat || "", wallet: r.wallet, to: r.to_wallet || "", date: r.date, note: r.note || "", at: Number(r.at) || 0 });
+async function syncMonth(k) {
+  const cur = (S.months[k] || {}).tx || {}; const ups = [], dels = [];
+  for (const id in cur) if (S.synced[id] !== JSON.stringify(cur[id])) ups.push(clone(cur[id]));
+  for (const id in S.syncedMonth) if (S.syncedMonth[id] === k && !cur[id]) dels.push(id);
+  for (let i = 0; i < ups.length; i += 500) {
+    const part = ups.slice(i, i + 500);
+    ok(await sb.from("transactions").upsert(part.map(toRow), { onConflict: "user_id,id" }));
+    part.forEach(t => { S.synced[t.id] = JSON.stringify(t); S.syncedMonth[t.id] = k; });
   }
-  S.mode = "local";
+  for (let i = 0; i < dels.length; i += 200) {
+    const part = dels.slice(i, i + 200);
+    ok(await sb.from("transactions").delete().eq("user_id", me.id).in("id", part));
+    part.forEach(id => { delete S.synced[id]; delete S.syncedMonth[id]; });
+  }
+}
+async function fetchCloud() {
+  const st = ok(await sb.from("user_state").select("data").eq("user_id", me.id).maybeSingle()).data;
+  let rows = [];
+  for (let from = 0; ; from += 1000) {
+    const data = ok(await sb.from("transactions").select("id,type,amount,cat,wallet,to_wallet,date,note,at").order("date", { ascending: true }).order("id", { ascending: true }).range(from, from + 999)).data || [];
+    rows = rows.concat(data); if (data.length < 1000) break;
+  }
+  const months = {}, synced = {}, syncedMonth = {};
+  rows.forEach(r => { const t = fromRow(r); const k = mKey(t.date); (months[k] ||= { tx: {} }).tx[t.id] = t; synced[t.id] = JSON.stringify(t); syncedMonth[t.id] = k; });
+  return { state: st && st.data && Object.keys(st.data).length ? normalize(st.data) : null, months, synced, syncedMonth, count: rows.length };
+}
+async function enterCloud(session) {
+  me = session.user; S.mode = "supa"; S.loading = true; render();
+  let c;
+  try { c = await fetchCloud(); }
+  catch (e) { toast("Tidak bisa memuat data akun. Periksa koneksi, lalu muat ulang halaman."); S.loading = false; render(); return; }
+  S.demo = false; S.loading = false;
+  S.state = c.state || defaultState(); S.months = c.months; S.synced = c.synced; S.syncedMonth = c.syncedMonth; S.fetchedAt = Date.now();
+  const local = loadLocal();
+  const localCount = local ? Object.values(local.months).reduce((a, m) => a + Object.keys(m.tx || {}).length, 0) : 0;
+  if (localCount && !c.count && !c.state) { mergeLocal(local, true); toast(`${localCount} catatan dari browser ini dipindahkan ke akunmu`); }
+  else if (!c.state) saveState();
+  S.pendingLocal = localCount && (c.count || c.state) ? localCount : 0;
+  render();
+}
+function mergeLocal(local, replaceState) {
+  if (replaceState) S.state = local.state;
+  else {
+    const byId = (a, b) => { const ids = new Set(a.map(x => x.id)); return a.concat(b.filter(x => !ids.has(x.id))); };
+    for (const k of ["wallets", "categories", "recurring", "goals"]) S.state[k] = byId(S.state[k], local.state[k] || []);
+    for (const [k, v] of Object.entries(local.state.budgets || {})) if (!(S.state.budgets[k] > 0)) S.state.budgets[k] = v;
+  }
+  const touched = new Set();
+  for (const [k, m] of Object.entries(local.months)) for (const [id, t] of Object.entries(m.tx || {})) {
+    if (!(S.months[k] && S.months[k].tx[id])) { (S.months[k] ||= { tx: {} }).tx[id] = t; touched.add(k); }
+  }
+  saveState(); touched.forEach(saveMonth);
+  try { localStorage.setItem(LS_KEY + ".dipindahkan", localStorage.getItem(LS_KEY) || ""); localStorage.removeItem(LS_KEY); } catch (e) {}
+  S.pendingLocal = 0;
+}
+function enterLocal() {
+  me = null; S.mode = "local"; S.loading = false; S.synced = {}; S.syncedMonth = {};
   const l = loadLocal();
   if (l) { S.state = l.state; S.months = l.months; } else { S.state = defaultState(); S.months = {}; }
   render();
+}
+async function signIn() {
+  if (!sb) { toast("Login belum tersedia. Coba muat ulang halaman."); return; }
+  const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
+  if (error) toast("Tidak bisa membuka login Google: " + error.message);
+}
+async function signOut() {
+  if (S.saving) { toast("Tunggu sebentar, masih menyimpan…"); return; }
+  await sb.auth.signOut(); enterLocal(); toast("Kamu sudah keluar");
+}
+function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
+async function boot() {
+  if (!SUPA_ON) { enterLocal(); return; }
+  try {
+    await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js");
+    sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" } });
+    const { data } = await sb.auth.getSession();
+    if (data.session) await enterCloud(data.session); else enterLocal();
+    sb.auth.onAuthStateChange((ev, session) => {
+      if (ev === "SIGNED_IN" && session && (!me || me.id !== session.user.id)) enterCloud(session);
+      if (ev === "SIGNED_OUT" && S.mode === "supa") enterLocal();
+    });
+    document.addEventListener("visibilitychange", async () => {
+      if (document.visibilityState !== "visible" || S.mode !== "supa" || S.saving || S.demo || Date.now() - (S.fetchedAt || 0) < 60000) return;
+      try { const c = await fetchCloud(); if (S.saving) return; S.state = c.state || S.state; S.months = c.months; S.synced = c.synced; S.syncedMonth = c.syncedMonth; S.fetchedAt = Date.now(); if (!sheetOpen()) render(); } catch (e) {}
+    });
+  } catch (e) {
+    enterLocal(); toast("Login sedang tidak tersedia. Catatan disimpan di browser ini dulu.");
+  }
 }
 
 /* ---------- derived ---------- */
@@ -544,11 +605,12 @@ const NAV = [
   ["goals", "Target Tabungan", "target"], ["categories", "Kategori", "tag"], ["data", "Data & Cadangan", "db"],
 ];
 const SUBS = ["budget", "wallets", "recurring", "goals", "categories", "data"];
+function renderShell0() { if (S.state) renderShell(); }
 function renderShell() {
   $("#side").innerHTML = `<div class="brand"><span class="brand-mark">K</span>Kantong</div>` +
     NAV.map(([v, l, i]) => `<button class="navbtn" data-go="${v}" ${UI.view === v ? 'aria-current="page"' : ""}>${ICON[i]}${l}</button>`).join("") +
     `<button class="navbtn add-big" data-act="add">${ICON.plus}Catat transaksi</button>
-     <div class="foot">${statusHTML()}<div style="margin-top:6px">Tekan <kbd>N</kbd> untuk catat cepat</div></div>`;
+     <div class="foot"><div style="margin-bottom:10px">${accountHTML(true)}</div><span data-status>${statusHTML()}</span><div style="margin-top:6px">Tekan <kbd>N</kbd> untuk catat cepat</div><div style="margin-top:6px"><a href="privasi.html">Kebijakan privasi</a></div></div>`;
   const tabSel = v => (v === "more" ? (UI.view === "more" || SUBS.includes(UI.view)) : UI.view === v) ? 'aria-current="page"' : "";
   $("#tabbar").innerHTML =
     `<button class="tab" data-go="home" ${tabSel("home")}>${ICON.home}Beranda</button>
@@ -559,15 +621,28 @@ function renderShell() {
 }
 function statusHTML() {
   if (S.demo) return `<span class="status"><i class="local"></i>Data contoh, tidak disimpan</span>`;
-  if (S.mode === "cloud") return `<span class="status"><i></i>Tersimpan di akunmu</span>`;
+  if (S.mode === "supa") return `<span class="status"><i></i>${S.saving ? "Menyimpan…" : "Tersinkron ke akun"}</span>`;
   return `<span class="status"><i class="local"></i>Tersimpan di browser ini</span>`;
 }
+function renderStatus() { document.querySelectorAll("[data-status]").forEach(el => el.innerHTML = statusHTML()); }
+const sheetOpen = () => !!sheetClose;
+function accountHTML(compact) {
+  if (!SUPA_ON) return "";
+  if (S.mode === "supa" && me) {
+    const name = (me.user_metadata && (me.user_metadata.full_name || me.user_metadata.name)) || me.email;
+    return `<div class="acct"><div class="acct-who"><b>${esc(name)}</b><span>${esc(me.email || "")}</span></div><button class="btn sm" data-act="signout">Keluar</button></div>`;
+  }
+  return `<button class="btn ${compact ? "sm" : ""} google" data-act="signin">${GOOGLE_G}Masuk dengan Google</button>`;
+}
+const GOOGLE_G = '<svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 function render() {
+  if (S.loading) { renderShell0(); $("#main").innerHTML = `<div class="loading">Memuat catatan dari akunmu…</div>`; return; }
   if (!S.state) return;
   renderShell();
   const v = UI.view;
   const fn = { home: vHome, history: vHistory, report: vReport, more: vMore, budget: vBudget, wallets: vWallets, recurring: vRecurring, goals: vGoals, categories: vCategories, data: vData }[v] || vHome;
-  const demoBar = S.demo ? `<div class="banner"><span>Kamu sedang melihat data contoh. Perubahan tidak disimpan.</span><button class="btn sm" data-act="exitDemo">Mulai dengan data sendiri</button></div>` : "";
+  const mergeBar = !S.demo && S.mode === "supa" && S.pendingLocal ? `<div class="banner"><span>Ada ${S.pendingLocal} catatan di browser ini yang belum masuk ke akunmu.</span><span style="display:flex;gap:6px"><button class="btn sm" data-act="mergeSkip">Abaikan</button><button class="btn sm primary" data-act="merge">Pindahkan ke akun</button></span></div>` : "";
+  const demoBar = mergeBar + (S.demo ? `<div class="banner"><span>Kamu sedang melihat data contoh. Perubahan tidak disimpan.</span><button class="btn sm" data-act="exitDemo">Mulai dengan data sendiri</button></div>` : "");
   $("#main").innerHTML = demoBar + fn();
   if (v === "history") renderHistoryList();
 }
@@ -602,7 +677,7 @@ function vHome() {
   const welcome = !hasData() && !S.demo ? `<div class="card welcome" style="margin-bottom:14px"><div><h2 style="font-size:20px">Catat uangmu dalam 3 detik</h2>
      <ol><li>Tekan tombol <b>+</b> lalu ketik seperti chat, misalnya <b>kopi susu 25rb</b>.</li><li>Kategori dan jumlah terisi otomatis. Tekan <b>Simpan</b>.</li><li>Atur saldo awal di <b>Dompet</b> agar total saldo sesuai.</li></ol>
      <div class="acts"><button class="btn primary" data-act="add">${ICON.plus.replace("<svg", '<svg width="18" height="18"')}Catat transaksi pertama</button><button class="btn" data-act="demo">Lihat dengan data contoh</button></div></div>
-     <div class="muted small">${statusHTML()}<p>Datamu pribadi. Tidak ada akun, tidak ada server; pembuat situs ini pun tidak bisa melihat catatanmu.</p><p>${S.mode === "cloud" ? "Catatan tersimpan di akun Claude-mu, jadi tetap ada saat kamu membuka halaman ini dari perangkat lain." : "Catatan tersimpan di browser ini saja. Unduh cadangan secara berkala di menu Data, lalu pulihkan di perangkat lain bila perlu."}</p></div></div>` : "";
+     <div class="muted small"><span data-status>${statusHTML()}</span>${S.mode === "supa" ? `<p>Catatanmu tersinkron ke akun Google-mu, jadi bisa dibuka dari HP dan laptop mana pun. Hanya kamu yang bisa membaca dan mengubahnya.</p>` : SUPA_ON ? `<p>Bisa langsung dipakai tanpa daftar; catatan tersimpan di browser ini. Masuk dengan Google agar catatanmu tersimpan aman dan bisa dibuka dari perangkat lain.</p><div style="margin-top:10px">${accountHTML()}</div>` : `<p>Catatan tersimpan di browser ini saja. Unduh cadangan secara berkala di menu Data.</p>`}<p><a href="privasi.html">Kebijakan privasi</a></p></div></div>` : "";
 
   const due = dueRecurring().slice(0, 4);
   const dueCard = due.length ? `<div class="card"><div class="card-h"><h2>Tagihan & pemasukan rutin</h2><button class="link" data-go="recurring">Kelola</button></div><div class="list">${due.map(r => {
@@ -720,7 +795,7 @@ function vReport() {
 function vMore() {
   const items = NAV.filter(([v]) => SUBS.includes(v) || v === "report");
   const desc = { report: "Grafik kategori & tren 6 bulan", budget: "Batas belanja per kategori", wallets: "Tunai, bank, e-wallet, transfer", recurring: "Gaji, listrik, langganan", goals: "Dana darurat, liburan, dll.", categories: "Ubah ikon, nama, kata kunci", data: "Ekspor CSV, cadangan, pulihkan" };
-  return `${head("Lainnya", "Menu")}<div class="menu">${items.map(([v, l, i]) => `<button class="row" data-go="${v}"><span class="ico" style="background:var(--accent-soft);color:var(--accent)">${ICON[i].replace("<svg", '<svg width="20" height="20"')}</span><span class="mid"><div class="t1">${l}</div><div class="t2">${desc[v]}</div></span>${ICON.right.replace("<svg", '<svg width="16" height="16" style="color:var(--faint)"')}</button>`).join("")}</div><p class="small muted" style="margin-top:18px">${statusHTML()}</p>`;
+  return `${head("Lainnya", "Menu")}<div class="menu">${items.map(([v, l, i]) => `<button class="row" data-go="${v}"><span class="ico" style="background:var(--accent-soft);color:var(--accent)">${ICON[i].replace("<svg", '<svg width="20" height="20"')}</span><span class="mid"><div class="t1">${l}</div><div class="t2">${desc[v]}</div></span>${ICON.right.replace("<svg", '<svg width="16" height="16" style="color:var(--faint)"')}</button>`).join("")}</div><div class="card" style="margin-top:14px;display:flex;flex-direction:column;gap:10px"><span data-status>${statusHTML()}</span>${accountHTML()}<a class="small" href="privasi.html">Kebijakan privasi</a></div>`;
 }
 
 function vBudget() {
@@ -783,7 +858,7 @@ function vData() {
   <div class="grid half">
     <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Ekspor ke spreadsheet</h2><p class="muted small">Unduh semua ${n} transaksi sebagai CSV untuk dibuka di Excel atau Google Sheets.</p><button class="btn primary" data-act="csv">Unduh CSV</button></div>
     <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Cadangan lengkap</h2><p class="muted small">Simpan semua data (dompet, kategori, anggaran, target) sebagai file JSON, lalu pulihkan kapan saja.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="backup">Unduh cadangan</button><label class="btn" for="importFile" style="cursor:pointer">Pulihkan dari file</label><input type="file" id="importFile" accept=".json,application/json" hidden></div></div>
-    <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Tempat penyimpanan</h2><p class="muted small">${S.mode === "cloud" ? "Data tersimpan di akun Claude-mu dan hanya bisa dilihat olehmu. Pembuat halaman ini pun tidak bisa melihatnya." : "Data tersimpan di browser ini saja dan tidak terkirim ke server mana pun. Unduh cadangan secara berkala agar tidak hilang, misalnya saat riwayat browser dihapus."}</p>${statusHTML()}</div>
+    <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Akun & penyimpanan</h2><p class="muted small">${S.mode === "supa" ? "Data tersimpan di akunmu dan tersinkron ke semua perangkat tempat kamu masuk. Hanya kamu yang bisa membaca dan mengubahnya." : SUPA_ON ? "Data tersimpan di browser ini saja. Masuk dengan Google agar tersimpan di akun dan bisa dibuka dari perangkat lain." : "Data tersimpan di browser ini saja. Unduh cadangan secara berkala agar tidak hilang."}</p><div style="display:flex;flex-direction:column;gap:10px"><span data-status>${statusHTML()}</span>${accountHTML()}<a class="small" href="privasi.html">Kebijakan privasi</a></div></div>
     <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Hapus semua data</h2><p class="muted small">Menghapus semua transaksi dan pengaturan. Tidak bisa dibatalkan.</p><button class="btn danger" data-act="wipe" ${S.demo ? "disabled" : ""}>Hapus semua</button></div>
   </div>`;
 }
@@ -1014,7 +1089,7 @@ async function offerFile(filename, data, mime) {
     try { await downloads.save({ filename, data }); toast("File siap disimpan"); return; }
     catch (e) { if (e && e.code === "declined") return; }
   }
-  openSheet("Salin data", `<p class="muted small">Unduhan tidak tersedia di tampilan ini. Salin isi berikut lalu tempel ke file <b>${esc(filename)}</b>.</p><textarea class="inp" id="dump" rows="10" style="font-family:monospace;font-size:12px" readonly>${esc(data)}</textarea><div class="actions"><button class="btn primary" id="cp">Salin</button></div>`, el => {
+  openSheet("Salin data", `<p class="muted small">Unduhan otomatis tidak tersedia di browser ini. Salin isi berikut lalu tempel ke file <b>${esc(filename)}</b>.</p><textarea class="inp" id="dump" rows="10" style="font-family:monospace;font-size:12px" readonly>${esc(data)}</textarea><div class="actions"><button class="btn primary" id="cp">Salin</button></div>`, el => {
     $("#cp", el).onclick = () => { const ta = $("#dump", el); navigator.clipboard?.writeText(ta.value).then(() => toast("Disalin"), () => { ta.select(); toast("Tekan Ctrl/Cmd+C untuk menyalin"); }) ?? (ta.select(), toast("Tekan Ctrl/Cmd+C untuk menyalin")); };
   });
 }
@@ -1036,7 +1111,7 @@ function importBackup(file) {
       $("#doImp", el).onclick = () => {
         S.demo = false; const old = Object.keys(S.months);
         S.state = normalize(d.state); S.months = d.months;
-        saveState(); if (S.mode === "cloud") { new Set([...old, ...Object.keys(S.months)]).forEach(k => saveMonth(k)); } else saveLocal();
+        saveState(); if (S.mode === "supa") { new Set([...old, ...Object.keys(S.months)]).forEach(k => saveMonth(k)); } else saveLocal();
         sheetClose(); render(); toast("Cadangan dipulihkan");
       };
     });
@@ -1046,7 +1121,7 @@ function importBackup(file) {
 function wipeAll() {
   openSheet("Hapus semua data", `<p>Semua transaksi, dompet, anggaran, tagihan rutin, dan target akan dihapus. Ini tidak bisa dibatalkan.</p><p class="small muted">Saran: unduh cadangan dulu.</p><div class="actions"><button class="btn" data-close3>Batal</button><button class="btn danger" id="doWipe">Ya, hapus semua</button></div>`, el => {
     el.querySelector("[data-close3]").onclick = () => sheetClose();
-    $("#doWipe", el).onclick = () => { const old = Object.keys(S.months); S.months = {}; S.state = defaultState(); saveState(); if (S.mode === "cloud") old.forEach(k => saveMonth(k)); else saveLocal(); sheetClose(); UI.view = "home"; render(); toast("Semua data dihapus"); };
+    $("#doWipe", el).onclick = () => { const old = Object.keys(S.months); S.months = {}; S.state = defaultState(); saveState(); if (S.mode === "supa") old.forEach(k => saveMonth(k)); else saveLocal(); sheetClose(); UI.view = "home"; render(); toast("Semua data dihapus"); };
   });
 }
 
@@ -1082,7 +1157,11 @@ document.addEventListener("click", e => {
     case "mPrev": UI.month = shiftMonth(UI.month, -1); return render();
     case "mNext": UI.month = shiftMonth(UI.month, 1); return render();
     case "demo": { const dm = makeDemo(); S.demo = true; S.state = dm.state; S.months = dm.months; render(); toast("Data contoh dimuat"); return; }
-    case "exitDemo": { S.demo = false; if (S.mode === "cloud") { S.state = S.cloudState || defaultState(); S.months = clone(S.cloudMonths || {}); } else { const l = loadLocal(); S.state = l ? l.state : defaultState(); S.months = l ? l.months : {}; } render(); return; }
+    case "exitDemo": { S.demo = false; if (S.mode === "supa") { enterCloud({ user: me }); } else { const l = loadLocal(); S.state = l ? l.state : defaultState(); S.months = l ? l.months : {}; render(); } return; }
+    case "signin": return signIn();
+    case "signout": return signOut();
+    case "merge": { const l = loadLocal(); if (l) { mergeLocal(l, false); render(); toast("Catatan browser dipindahkan ke akunmu"); } else { S.pendingLocal = 0; render(); } return; }
+    case "mergeSkip": S.pendingLocal = 0; return render();
     case "csv": return exportCSV();
     case "backup": return exportBackup();
     case "wipe": return wipeAll();

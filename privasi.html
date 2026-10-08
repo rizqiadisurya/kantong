@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kebijakan Privasi Kantong</title>
+<meta name="theme-color" content="#2B44B8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap">
+<style>
+:root{--bg:#EEF1F5;--surface:#fff;--fg:#141B2D;--muted:#5D6880;--accent:#2B44B8;--line:#DCE1EA}
+@media (prefers-color-scheme:dark){:root{--bg:#0E1220;--surface:#171C2D;--fg:#E8ECF6;--muted:#A1AAC2;--accent:#8EA2FF;--line:#2A3148;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 "Plus Jakarta Sans",system-ui,sans-serif;padding-inline:16px;padding-block:32px 64px}
+main{max-width:680px;margin:0 auto;background:var(--surface);border-radius:18px;padding:28px clamp(20px,5vw,40px)}
+h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:30px;line-height:1.15;margin:8px 0 4px;text-wrap:balance}
+h2{font-size:17px;margin:28px 0 6px}
+p,li{color:var(--fg)} .muted{color:var(--muted);font-size:14px}
+a{color:var(--accent);font-weight:600}
+ul{padding-left:20px} li{margin:4px 0}
+.back{display:inline-block;margin-bottom:8px;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+<a class="back" href="./">← Kembali ke Kantong</a>
+<h1>Kebijakan Privasi</h1>
+<p class="muted">Berlaku sejak 9 Oktober 2026</p>
+
+<p>Kantong adalah aplikasi pencatatan keuangan pribadi. Halaman ini menjelaskan data apa yang disimpan, di mana, dan siapa yang bisa mengaksesnya.</p>
+
+<h2>Tanpa masuk akun</h2>
+<p>Kalau kamu memakai Kantong tanpa masuk, semua catatan disimpan di browser perangkatmu saja dan tidak dikirim ke server mana pun. Catatan itu akan hilang bila data browser dihapus, jadi unduh cadangan secara berkala lewat menu <b>Data & Cadangan</b>.</p>
+
+<h2>Dengan akun Google</h2>
+<p>Saat kamu masuk dengan Google, Kantong menyimpan:</p>
+<ul>
+  <li>Nama dan alamat email dari akun Google-mu, untuk mengenali akunmu.</li>
+  <li>Catatan yang kamu masukkan sendiri: transaksi, dompet, kategori, anggaran, tagihan rutin, dan target tabungan.</li>
+</ul>
+<p>Kantong tidak meminta akses ke Gmail, Drive, kontak, atau rekening bankmu, dan tidak pernah menyimpan kata sandi Google-mu.</p>
+
+<h2>Di mana data disimpan</h2>
+<p>Data akun disimpan di database Supabase. Setiap baris data terkunci ke akunmu dengan aturan keamanan database (Row Level Security), sehingga pengguna lain tidak bisa membaca atau mengubahnya.</p>
+<p>Pengelola Kantong, sebagai pemilik database, secara teknis dapat mengakses data tersebut. Pengelola tidak akan membaca, menjual, atau membagikan datamu, kecuali bila diwajibkan hukum.</p>
+
+<h2>Yang tidak kami lakukan</h2>
+<ul>
+  <li>Tidak ada iklan.</li>
+  <li>Tidak ada pelacak analitik pihak ketiga.</li>
+  <li>Data tidak dijual atau dipakai untuk tujuan lain.</li>
+</ul>
+
+<h2>Menghapus data</h2>
+<p>Kamu bisa menghapus semua catatan kapan saja lewat <b>Data & Cadangan → Hapus semua</b>. Untuk menghapus akun sepenuhnya, hubungi pengelola lewat <a href="https://github.com/rizqiadisurya/kantong/issues" rel="noopener">halaman GitHub Kantong</a>.</p>
+
+<h2>Perubahan</h2>
+<p>Bila kebijakan ini berubah, tanggal di atas akan diperbarui.</p>
+</main>
+</body>
+</html>

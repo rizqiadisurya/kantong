@@ -549,7 +549,14 @@ async function boot() {
   try {
     await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js");
     sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" } });
+    const authErr = (() => {
+      const q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.replace(/^#/, ""));
+      const d = q.get("error_description") || h.get("error_description") || q.get("error") || h.get("error");
+      return d ? decodeURIComponent(d.replace(/\+/g, " ")) : "";
+    })();
+    if (authErr) { try { history.replaceState(null, "", location.pathname); } catch (e) {} }
     const { data } = await sb.auth.getSession();
+    if (authErr && !data.session) setTimeout(() => toast("Login Google gagal. Coba lagi sebentar lagi. (" + authErr.slice(0, 80) + ")"), 300);
     if (data.session) await enterCloud(data.session); else enterLocal();
     sb.auth.onAuthStateChange((ev, session) => {
       if (ev === "SIGNED_IN" && session && (!me || me.id !== session.user.id)) enterCloud(session);

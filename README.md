@@ -8,6 +8,7 @@ Panduan menyiapkan login Google, Supabase, dan Netlify: lihat [SETUP.md](SETUP.m
 
 ## Fitur
 - Ketik cepat: jumlah, kategori, dan catatan terisi otomatis
+- Scan struk: foto struk → total, tanggal, toko, dan daftar barang terbaca otomatis (OCR di perangkat, Tesseract.js)
 - Banyak dompet (tunai, bank, e-wallet) dan transfer antar dompet
 - Anggaran per kategori dengan peringatan
 - Tagihan & pemasukan rutin

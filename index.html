@@ -217,6 +217,17 @@ kbd{font-family:var(--f-body);font-size:12px;background:var(--surface-2);border:
 .smart input{border:0;background:none;outline:none;width:100%;font-weight:600;padding:4px 0}
 .smart .hint{font-size:12px;color:var(--muted);min-height:18px}
 .smart .hint b{color:var(--accent)}
+.smart-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.scanbtn{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--accent);background:var(--surface);color:var(--accent);border-radius:99px;padding:5px 12px;font-weight:700;font-size:12.5px}
+.scanbtn svg{width:16px;height:16px}
+.scanbtn:disabled{opacity:.6;cursor:progress}
+.scanbar{display:block;height:4px;border-radius:99px;background:var(--surface);margin-top:6px;overflow:hidden}
+.scanbar i{display:block;height:100%;background:var(--accent);transition:width .2s}
+.scanres{border:1.5px dashed var(--accent);border-radius:14px;padding:12px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px}
+.scanres details summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--accent)}
+.scanitems{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px;max-height:180px;overflow:auto}
+.scanitems li{display:flex;justify-content:space-between;gap:10px}
+.scanitems li span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .amount{display:flex;align-items:baseline;gap:6px;border-bottom:2px solid var(--line);padding:4px 2px 6px}
 .amount:focus-within{border-color:var(--accent)}
 .amount span{font-family:var(--f-display);font-size:22px;font-weight:700;color:var(--muted)}
@@ -269,6 +280,7 @@ kbd{font-family:var(--f-body);font-size:12px;background:var(--surface-2);border:
 <div id="toastRoot"></div>
 
 <script src="config.js"></script>
+<script src="struk.js"></script>
 <script>
 (() => {
 "use strict";
@@ -334,6 +346,7 @@ const ICON = {
   left:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   right:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
   x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/></svg>',
   search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
 };
 const PALETTE = ["#E4572E","#2B44B8","#17A398","#F3A712","#8E44AD","#D81E5B","#4C9F38","#3A86FF","#FF7F50","#6D597A","#2EC4B6","#B5651D","#5F6CAF","#9AAE1B","#E07A5F","#468FAF"];
@@ -616,7 +629,7 @@ function renderShell0() { if (S.state) renderShell(); }
 function renderShell() {
   $("#side").innerHTML = `<div class="brand"><span class="brand-mark">K</span>Kantong</div>` +
     NAV.map(([v, l, i]) => `<button class="navbtn" data-go="${v}" ${UI.view === v ? 'aria-current="page"' : ""}>${ICON[i]}${l}</button>`).join("") +
-    `<button class="navbtn add-big" data-act="add">${ICON.plus}Catat transaksi</button>
+    `<button class="navbtn add-big" data-act="add">${ICON.plus}Catat transaksi</button><button class="navbtn" data-act="scan">${ICON.camera}Scan struk</button>
      <div class="foot"><div style="margin-bottom:10px">${accountHTML(true)}</div><span data-status>${statusHTML()}</span><div style="margin-top:6px">Tekan <kbd>N</kbd> untuk catat cepat</div><div style="margin-top:6px"><a href="privasi.html">Kebijakan privasi</a></div></div>`;
   const tabSel = v => (v === "more" ? (UI.view === "more" || SUBS.includes(UI.view)) : UI.view === v) ? 'aria-current="page"' : "";
   $("#tabbar").innerHTML =
@@ -682,8 +695,8 @@ function vHome() {
   const h = new Date().getHours(); const greet = h < 11 ? "Selamat pagi" : h < 15 ? "Selamat siang" : h < 18 ? "Selamat sore" : "Selamat malam";
 
   const welcome = !hasData() && !S.demo ? `<div class="card welcome" style="margin-bottom:14px"><div><h2 style="font-size:20px">Catat uangmu dalam 3 detik</h2>
-     <ol><li>Tekan tombol <b>+</b> lalu ketik seperti chat, misalnya <b>kopi susu 25rb</b>.</li><li>Kategori dan jumlah terisi otomatis. Tekan <b>Simpan</b>.</li><li>Atur saldo awal di <b>Dompet</b> agar total saldo sesuai.</li></ol>
-     <div class="acts"><button class="btn primary" data-act="add">${ICON.plus.replace("<svg", '<svg width="18" height="18"')}Catat transaksi pertama</button><button class="btn" data-act="demo">Lihat dengan data contoh</button></div></div>
+     <ol><li>Tekan tombol <b>+</b> lalu ketik seperti chat, misalnya <b>kopi susu 25rb</b>, atau foto struk belanja dengan <b>Scan struk</b>.</li><li>Kategori dan jumlah terisi otomatis. Tekan <b>Simpan</b>.</li><li>Atur saldo awal di <b>Dompet</b> agar total saldo sesuai.</li></ol>
+     <div class="acts"><button class="btn primary" data-act="add">${ICON.plus.replace("<svg", '<svg width="18" height="18"')}Catat transaksi pertama</button><button class="btn" data-act="scan">${ICON.camera.replace("<svg", '<svg width="18" height="18"')}Scan struk</button><button class="btn" data-act="demo">Lihat dengan data contoh</button></div></div>
      <div class="muted small"><span data-status>${statusHTML()}</span>${S.mode === "supa" ? `<p>Catatanmu tersinkron ke akun Google-mu, jadi bisa dibuka dari HP dan laptop mana pun. Hanya kamu yang bisa membaca dan mengubahnya.</p>` : SUPA_ON ? `<p>Bisa langsung dipakai tanpa daftar; catatan tersimpan di browser ini. Masuk dengan Google agar catatanmu tersimpan aman dan bisa dibuka dari perangkat lain.</p><div style="margin-top:10px">${accountHTML()}</div>` : `<p>Catatan tersimpan di browser ini saja. Unduh cadangan secara berkala di menu Data.</p>`}<p><a href="privasi.html">Kebijakan privasi</a></p></div></div>` : "";
 
   const due = dueRecurring().slice(0, 4);
@@ -907,20 +920,70 @@ function parseSmart(text) {
   for (const t of toks) { const v = /\d/.test(t) ? parseAmount(t) : 0; if (v && !amount) amount = v; else rest.push(t); }
   return { amount, note: rest.join(" ") };
 }
-function txSheet(existing, preset = {}) {
+function txSheet(existing, preset = {}, opts = {}) {
   const st = S.state;
+  let scanRes = null, scanBusy = false;
   const t = existing ? clone(existing) : Object.assign({ id: uid("t"), type: "out", amount: 0, cat: "", wallet: "", to: "", date: todayISO(), note: "" }, preset);
   if (!t.wallet) t.wallet = st.last?.[t.type] && st.wallets.some(w => w.id === st.last[t.type]) ? st.last[t.type] : st.wallets[0]?.id;
   if (t.type === "transfer" && !t.to) t.to = st.wallets.find(w => w.id !== t.wallet)?.id || "";
   const prevMonth = existing ? mKey(existing.date) : null;
   if (!st.wallets.length) { toast("Tambahkan dompet dulu."); UI.view = "wallets"; render(); return; }
 
+  const scanPanel = () => {
+    if (!scanRes) return "";
+    const r = scanRes, sum = r.items.reduce((a, i) => a + i.amount, 0);
+    const canSplit = r.items.length >= 2 && (!r.total || sum <= r.total);
+    return `<div class="scanres" role="status">
+      <div class="sp"><b>Hasil scan${r.merchant ? ": " + esc(r.merchant) : ""}</b><button type="button" class="link" data-scanclose>Tutup</button></div>
+      <div class="small">${r.total ? `Total <b class="num">${rp(r.total)}</b>${r.totalSure ? "" : ` <span class="c-warn">(perkiraan, cek lagi)</span>`}` : `<span class="c-out">Total tidak terbaca. Isi jumlahnya manual.</span>`}${r.date ? " · " + dayLabel(r.date) : " · tanggal tidak terbaca, dipakai hari ini"}</div>
+      ${r.items.length ? `<details><summary>${r.items.length} barang terbaca</summary><ul class="scanitems">${r.items.map(i => `<li><span>${esc(i.name)}</span><span class="num">${rp(i.amount)}</span></li>`).join("")}</ul></details>` : ""}
+      ${canSplit ? `<button type="button" class="btn sm" data-peritem>Catat per barang (${r.items.length} transaksi)</button>` : ""}
+      <div class="small muted">Periksa jumlah, kategori, dan tanggal di bawah, lalu tekan Simpan.</div>
+    </div>`;
+  };
+  async function doScan(el, file) {
+    if (!window.KantongStruk) { toast("Pembaca struk gagal dimuat. Muat ulang halaman."); return; }
+    scanBusy = true; const btn = q("[data-scan]", el); if (btn) btn.disabled = true;
+    const setP = (p, msg) => { const h = q("#smartHint", el); if (h) h.innerHTML = `${esc(msg)} <b>${Math.round(p * 100)}%</b><span class="scanbar"><i style="width:${Math.round(p * 100)}%"></i></span>`; };
+    try {
+      const r = await KantongStruk.scan(file, setP);
+      readForm(el);
+      if (t.type !== "out") { t.type = "out"; const lw = st.last?.out; if (lw && st.wallets.some(w => w.id === lw)) t.wallet = lw; }
+      if (r.total) t.amount = r.total;
+      t.date = r.date || todayISO();
+      const names = r.items.slice(0, 3).map(i => i.name).join(", ") + (r.items.length > 3 ? ` +${r.items.length - 3} lagi` : "");
+      t.note = [r.merchant, names].filter(Boolean).join(" · ").slice(0, 100);
+      const known = r.merchantCat && cats().some(c => c.id === r.merchantCat) ? r.merchantCat : "";
+      const g = known || (guessCategory([r.merchant, ...r.items.map(i => i.name)].join(" "), "out") || {}).id;
+      if (g) t.cat = g;
+      scanRes = r; scanBusy = false;
+      { const sm = q("#smart", el); const sv = sm ? sm.value : ""; mount(el); const s2 = q("#smart", el); if (s2) s2.value = sv; }
+      if (!r.total && !r.items.length) toast("Struk sulit dibaca. Coba foto lebih dekat, lurus, dan terang.");
+    } catch (e) {
+      scanBusy = false; if (btn) btn.disabled = false;
+      const h = q("#smartHint", el); if (h) h.innerHTML = `<span class="c-out">${esc(e && e.message ? e.message : "Gagal membaca struk.")}</span>`;
+    }
+  }
+  function savePerItem(el) {
+    readForm(el);
+    const r = scanRes; if (!r) return;
+    const recCat = t.cat || "c-other-out", date = t.date || todayISO(), wallet = t.wallet;
+    const list = r.items.map(it => ({ name: it.name, amount: it.amount, cat: (guessCategory(it.name, "out") || {}).id || recCat }));
+    const sum = list.reduce((a, i) => a + i.amount, 0);
+    if (r.total && r.total > sum) list.push({ name: "Pajak & biaya lain", amount: r.total - sum, cat: recCat });
+    const k = mKey(date), ids = [], base = Date.now();
+    list.forEach((it, n) => { const id = uid("t"); ids.push(id); (S.months[k] ||= { tx: {} }).tx[id] = { id, type: "out", amount: it.amount, cat: it.cat, wallet, to: "", date, note: `${it.name}${r.merchant ? " · " + r.merchant : ""}`, at: base + n }; });
+    saveMonth(k);
+    if (st.last.out !== wallet) { st.last.out = wallet; saveState(); }
+    render(); sheetClose();
+    toastUndo(`${list.length} transaksi dicatat · ${rp(list.reduce((a, i) => a + i.amount, 0))}`, () => { ids.forEach(id => delete S.months[k].tx[id]); saveMonth(k); render(); });
+  }
   const body = () => {
     const y = iso(new Date(Date.now() - 864e5));
     const catChips = cats().filter(c => c.type === t.type).map(c => `<button type="button" class="chip" data-pc="${c.id}" aria-pressed="${t.cat === c.id}"><span class="e">${esc(c.e)}</span>${esc(c.name)}</button>`).join("");
     const walChips = (key, excl) => st.wallets.filter(w => w.id !== excl).map(w => `<button type="button" class="chip" data-pw="${key}:${w.id}" aria-pressed="${t[key] === w.id}"><span class="e">${esc(w.e)}</span>${esc(w.name)}</button>`).join("");
     return `<form id="txForm" autocomplete="off">
-      ${existing ? "" : `<div class="smart"><label class="flabel" for="smart">Ketik cepat</label><input id="smart" placeholder="cth: kopi susu 25rb · gaji 15jt · bensin 50k" enterkeyhint="done"><div class="hint" id="smartHint">Jumlah, kategori, dan catatan terisi otomatis.</div></div>`}
+      ${existing ? "" : `<div class="smart"><div class="smart-h"><label class="flabel" for="smart">Ketik cepat</label><button type="button" class="scanbtn" data-scan ${scanBusy ? "disabled" : ""}>${ICON.camera}Scan struk</button></div><input id="smart" placeholder="cth: kopi susu 25rb · gaji 15jt · bensin 50k" enterkeyhint="done"><div class="hint" id="smartHint">Jumlah, kategori, dan catatan terisi otomatis.</div></div><input type="file" id="scanFile" accept="image/*" hidden>${scanPanel()}`}
       <div class="seg type" style="margin-bottom:14px">${[["out", "Pengeluaran"], ["in", "Pemasukan"], ["transfer", "Transfer"]].map(([v, l]) => `<button type="button" data-v="${v}" data-pt="${v}" aria-pressed="${t.type === v}">${l}</button>`).join("")}</div>
       <div class="field"><label for="amt">Jumlah</label><div class="amount"><span>Rp</span><input id="amt" inputmode="numeric" placeholder="0" value="${t.amount ? NF.format(t.amount) : ""}"></div>
         <div class="quick">${[10000, 20000, 50000, 100000, 500000].map(v => `<button type="button" data-qa="${v}">+${rpShort(v).replace("Rp", "")}</button>`).join("")}<button type="button" data-qa="0">Hapus</button></div></div>
@@ -956,6 +1019,8 @@ function txSheet(existing, preset = {}) {
       });
       smart.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(el, false); } });
     }
+    const sf = q("#scanFile", el);
+    if (sf) sf.addEventListener("change", () => { const f = sf.files && sf.files[0]; sf.value = ""; if (f) doScan(el, f); });
     dt.addEventListener("change", () => el.querySelectorAll("[data-pd]").forEach(x => x.setAttribute("aria-pressed", x.dataset.pd === dt.value)));
     q("#txForm", el).addEventListener("submit", e => { e.preventDefault(); save(el, false); });
   };
@@ -966,6 +1031,9 @@ function txSheet(existing, preset = {}) {
     else if (b.dataset.pw) { const [k, id] = b.dataset.pw.split(":"); t[k] = id; if (t.type === "transfer") { if (t.to === t.wallet) t.to = st.wallets.find(w => w.id !== t.wallet)?.id || ""; rerender(el); } else el.querySelectorAll(`[data-pw^="${k}:"]`).forEach(x => x.setAttribute("aria-pressed", x === b)); }
     else if (b.dataset.pd) { q("#dt", el).value = b.dataset.pd; el.querySelectorAll("[data-pd]").forEach(x => x.setAttribute("aria-pressed", x === b)); }
     else if (b.dataset.qa != null) { const amt = q("#amt", el); const add = +b.dataset.qa; const v = add ? parseAmount(amt.value) + add : 0; amt.value = v ? NF.format(v) : ""; }
+    else if (b.hasAttribute("data-scan")) { q("#scanFile", el)?.click(); }
+    else if (b.hasAttribute("data-scanclose")) { readForm(el); scanRes = null; rerender(el); }
+    else if (b.hasAttribute("data-peritem")) { savePerItem(el); }
     else if (b.hasAttribute("data-again")) { save(el, true); }
     else if (b.hasAttribute("data-del")) { confirmBox(q("#txForm", el), "Hapus transaksi ini?", "Hapus", () => { delete S.months[prevMonth].tx[t.id]; saveMonth(prevMonth); sheetClose(); render(); toastUndo("Transaksi dihapus", () => { (S.months[prevMonth] ||= { tx: {} }).tx[existing.id] = existing; saveMonth(prevMonth); render(); }); }); }
   };
@@ -984,7 +1052,7 @@ function txSheet(existing, preset = {}) {
     sheetClose();
     if (again) txSheet(null, { type: t.type, wallet: t.wallet, date: t.date });
   }
-  openSheet(existing ? "Ubah transaksi" : "Catat transaksi", "", el => { mount(el); el.addEventListener("click", e => onClick(el, e)); const sm = q("#smart", el); if (sm && window.matchMedia("(min-width:700px)").matches) setTimeout(() => sm.focus(), 30); });
+  openSheet(existing ? "Ubah transaksi" : "Catat transaksi", "", el => { mount(el); el.addEventListener("click", e => onClick(el, e)); if (opts.scan) { q("#scanFile", el)?.click(); return; } const sm = q("#smart", el); if (sm && window.matchMedia("(min-width:700px)").matches) setTimeout(() => sm.focus(), 30); });
 }
 
 function simpleForm(title, fields, { onSave, onDelete, deleteMsg, saveLabel = "Simpan" }) {
@@ -1160,6 +1228,7 @@ document.addEventListener("click", e => {
   if (d.catfilter) { UI.f = { q: "", type: "out", cat: d.catfilter, wallet: "" }; return go("history"); }
   switch (d.act) {
     case "add": return txSheet(null);
+    case "scan": return txSheet(null, {}, { scan: true });
     case "transfer": return txSheet(null, { type: "transfer" });
     case "mPrev": UI.month = shiftMonth(UI.month, -1); return render();
     case "mNext": UI.month = shiftMonth(UI.month, 1); return render();

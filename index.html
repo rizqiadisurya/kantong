@@ -238,6 +238,15 @@ kbd{font-family:var(--f-body);font-size:12px;background:var(--surface-2);border:
 .samt input{border:0;outline:none;background:none;width:100%;min-width:0;padding:7px 0;font-size:13px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
 .srow .x{width:32px;height:32px}
 .ssum{font-size:12.5px;color:var(--muted)}
+.stotal{border-radius:12px;padding:10px 12px;display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:baseline;margin-top:10px;border:1.5px solid transparent;transition:background .2s,border-color .2s,color .2s}
+.stotal .lbl{font-size:12.5px;font-weight:600}
+.stotal .val{font-family:var(--f-display);font-weight:800;font-size:20px;text-align:right;font-variant-numeric:tabular-nums}
+.stotal .sub{font-size:12px;opacity:.85}
+.stotal .subv{font-size:12px;text-align:right;font-variant-numeric:tabular-nums;opacity:.85}
+.stotal .msg{grid-column:1 / -1;font-size:12.5px;font-weight:700;margin-top:4px}
+.stotal.ok{background:var(--in-soft);border-color:var(--in);color:var(--in)}
+.stotal.bad{background:var(--out-soft);border-color:var(--out);color:var(--out)}
+.stotal.na{background:var(--surface-2);color:var(--muted)}
 .ssum.warn{color:var(--warn)}
 .amount{display:flex;align-items:baseline;gap:6px;border-bottom:2px solid var(--line);padding:4px 2px 6px}
 .amount:focus-within{border-color:var(--accent)}
@@ -950,6 +959,17 @@ function txSheet(existing, preset = {}, opts = {}) {
     if (diff < 0) return { cls: "warn", html: `Jumlah barang <b class="num">${rp(sum)}</b> lebih besar ${rp(-diff)} dari total struk ${rp(r.total)}. Periksa harga atau hapus baris yang salah baca.` };
     return { cls: "", html: `Jumlah barang <b class="num">${rp(sum)}</b> sama dengan total struk.` };
   };
+  const scanTotalBox = () => {
+    const r = scanRes, sum = itemsSum();
+    if (!r.total) return { cls: "na", html: `<span class="lbl">Total barang</span><span class="val">${rp(sum)}</span><span class="msg">Total struk belum diisi. Isi di kolom Jumlah di bawah untuk mencocokkan.</span>` };
+    const diff = r.total - sum, same = diff === 0;
+    return { cls: same ? "ok" : "bad", html: `<span class="lbl">Total barang</span><span class="val">${rp(sum)}</span><span class="sub">Total struk</span><span class="subv">${rp(r.total)}</span><span class="msg">${same ? "✓ Sudah sama dengan total struk" : diff > 0 ? `Belum sama: kurang ${rp(diff)}` : `Belum sama: lebih ${rp(-diff)}`}</span>` };
+  };
+  const updateScanSum = el => {
+    if (!scanRes) return;
+    const ss = scanSumHTML(), sumEl = q("#scanSum", el); if (sumEl) { sumEl.className = "ssum " + ss.cls; sumEl.innerHTML = ss.html; }
+    const tb = scanTotalBox(), tEl = q("#scanTotal", el); if (tEl) { tEl.className = "stotal " + tb.cls; tEl.innerHTML = tb.html; }
+  };
   const scanPanel = () => {
     if (!scanRes) return "";
     const r = scanRes, outCats = cats().filter(c => c.type === "out"), ss = scanSumHTML();
@@ -965,6 +985,7 @@ function txSheet(existing, preset = {}, opts = {}) {
       <div class="small">${r.total ? `Total <b class="num">${rp(r.total)}</b>${r.totalSure ? "" : ` <span class="c-warn">(perkiraan, cek lagi)</span>`}` : `<span class="c-out">Total tidak terbaca. Isi jumlahnya manual.</span>`}${r.date ? " · " + dayLabel(r.date) : " · tanggal tidak terbaca, dipakai hari ini"}</div>
       <details ${scanOpen ? "open" : ""} data-sdetails><summary>${r.items.length ? `${r.items.length} barang terbaca · periksa & ubah` : "Tambah rincian barang"}</summary>
         <div class="srows">${rows}</div>
+        ${(() => { const tb = scanTotalBox(); return `<div class="stotal ${tb.cls}" id="scanTotal" aria-live="polite">${tb.html}</div>`; })()}
         <div class="sp" style="margin-top:10px"><button type="button" class="btn sm" data-sadd>+ Tambah barang</button></div>
         <p class="ssum ${ss.cls}" id="scanSum">${ss.html}</p>
       </details>
@@ -986,7 +1007,7 @@ function txSheet(existing, preset = {}, opts = {}) {
       it.amount = parseAmount(e.target.value);
     } else if (f === "name") it.name = e.target.value;
     else if (f === "cat") it.cat = e.target.value;
-    const ss = scanSumHTML(), sumEl = q("#scanSum", el); if (sumEl) { sumEl.className = "ssum " + ss.cls; sumEl.innerHTML = ss.html; }
+    updateScanSum(el);
     const n = scanRes.items.filter(i => i.amount > 0).length, pb = q("[data-peritem]", el);
     if (pb) pb.textContent = `Catat per barang (${n} transaksi)`;
     if ((n >= 2) !== !!pb) { scanOpen = true; refreshScanPanel(el, `.srow[data-i="${row.dataset.i}"] [data-f="${f}"]`); }
@@ -1054,7 +1075,7 @@ function txSheet(existing, preset = {}, opts = {}) {
     const amt = q("#amt", el), smart = q("#smart", el), note = q("#note", el), dt = q("#dt", el);
     amt.addEventListener("input", () => {
       if (/^[\d.]*$/.test(amt.value)) { const v = parseAmount(amt.value); amt.value = v ? NF.format(v) : ""; }
-      if (scanRes) { scanRes.total = parseAmount(amt.value); scanRes.totalSure = true; const ss = scanSumHTML(), sumEl = q("#scanSum", el); if (sumEl) { sumEl.className = "ssum " + ss.cls; sumEl.innerHTML = ss.html; } }
+      if (scanRes) { scanRes.total = parseAmount(amt.value); scanRes.totalSure = true; updateScanSum(el); }
     });
     amt.addEventListener("blur", () => { const v = parseAmount(amt.value); amt.value = v ? NF.format(v) : ""; });
     if (smart) {

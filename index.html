@@ -312,7 +312,7 @@ function parseAmount(raw) {
   if (!m) return 0;
   let n = m[1], suf = m[2];
   if (suf) { n = n.replace(/\./g, ",").replace(",", ".").replace(/,/g, ""); }
-  else { n = n.replace(/[.,](?=\d{3}(\D|$))/g, "").replace(",", "."); }
+  else { n = n.replace(/\./g, "").replace(",", "."); } // titik = pemisah ribuan (Rupiah)
   let v = parseFloat(n) || 0;
   if (suf === "rb" || suf === "ribu" || suf === "k") v *= 1e3;
   else if (suf === "jt" || suf === "juta") v *= 1e6;

@@ -2,7 +2,7 @@
 
 Aplikasi pencatatan keuangan pribadi yang semudah chat: ketik `kopi susu 25rb`, selesai.
 
-**Buka aplikasinya:** https://rizqiadisurya.github.io/kantong/
+**Buka aplikasinya:** https://kantong-keuangan.netlify.app/ (cadangan: https://rizqiadisurya.github.io/kantong/)
 
 Panduan menyiapkan login Google, Supabase, dan Netlify: lihat [SETUP.md](SETUP.md).
 

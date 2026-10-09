@@ -228,6 +228,17 @@ kbd{font-family:var(--f-body);font-size:12px;background:var(--surface-2);border:
 .scanitems{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px;max-height:180px;overflow:auto}
 .scanitems li{display:flex;justify-content:space-between;gap:10px}
 .scanitems li span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srows{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.srow{display:grid;grid-template-columns:minmax(0,1fr) 120px 32px;gap:6px;align-items:center;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.srow .inp{padding:7px 9px;font-size:13px;border-radius:9px}
+.srow select.inp{grid-column:1 / 3}
+.samt{display:flex;align-items:center;gap:4px;border:1.5px solid var(--line);border-radius:9px;padding:0 8px;background:var(--surface)}
+.samt:focus-within{border-color:var(--accent)}
+.samt span{font-size:12px;color:var(--muted);font-weight:700}
+.samt input{border:0;outline:none;background:none;width:100%;min-width:0;padding:7px 0;font-size:13px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.srow .x{width:32px;height:32px}
+.ssum{font-size:12.5px;color:var(--muted)}
+.ssum.warn{color:var(--warn)}
 .amount{display:flex;align-items:baseline;gap:6px;border-bottom:2px solid var(--line);padding:4px 2px 6px}
 .amount:focus-within{border-color:var(--accent)}
 .amount span{font-family:var(--f-display);font-size:22px;font-weight:700;color:var(--muted)}
@@ -929,17 +940,56 @@ function txSheet(existing, preset = {}, opts = {}) {
   const prevMonth = existing ? mKey(existing.date) : null;
   if (!st.wallets.length) { toast("Tambahkan dompet dulu."); UI.view = "wallets"; render(); return; }
 
+  let scanOpen = false;
+  const itemsSum = () => (scanRes ? scanRes.items.reduce((a, i) => a + (i.amount || 0), 0) : 0);
+  const scanSumHTML = () => {
+    const r = scanRes, sum = itemsSum(), n = r.items.filter(i => i.amount > 0).length;
+    if (!r.total) return { cls: "", html: `${n} barang · jumlah <b class="num">${rp(sum)}</b>` };
+    const diff = r.total - sum;
+    if (diff > 0) return { cls: "", html: `Jumlah barang <b class="num">${rp(sum)}</b> dari total ${rp(r.total)}. Selisih ${rp(diff)} dicatat sebagai "Pajak & biaya lain".` };
+    if (diff < 0) return { cls: "warn", html: `Jumlah barang <b class="num">${rp(sum)}</b> lebih besar ${rp(-diff)} dari total struk ${rp(r.total)}. Periksa harga atau hapus baris yang salah baca.` };
+    return { cls: "", html: `Jumlah barang <b class="num">${rp(sum)}</b> sama dengan total struk.` };
+  };
   const scanPanel = () => {
     if (!scanRes) return "";
-    const r = scanRes, sum = r.items.reduce((a, i) => a + i.amount, 0);
-    const canSplit = r.items.length >= 2 && (!r.total || sum <= r.total);
+    const r = scanRes, outCats = cats().filter(c => c.type === "out"), ss = scanSumHTML();
+    const n = r.items.filter(i => i.amount > 0).length;
+    const rows = r.items.map((it, i) => `<div class="srow" data-i="${i}">
+        <input class="inp" data-f="name" value="${esc(it.name)}" placeholder="Nama barang" aria-label="Nama barang ${i + 1}">
+        <div class="samt"><span>Rp</span><input data-f="amount" inputmode="numeric" value="${it.amount ? NF.format(it.amount) : ""}" placeholder="0" aria-label="Harga barang ${i + 1}"></div>
+        <button type="button" class="x" data-sdel="${i}" aria-label="Hapus barang ${i + 1}">${ICON.x}</button>
+        <select class="inp" data-f="cat" aria-label="Kategori barang ${i + 1}">${outCats.map(c => `<option value="${c.id}" ${c.id === it.cat ? "selected" : ""}>${esc(c.e)} ${esc(c.name)}</option>`).join("")}</select>
+      </div>`).join("");
     return `<div class="scanres" role="status">
       <div class="sp"><b>Hasil scan${r.merchant ? ": " + esc(r.merchant) : ""}</b><button type="button" class="link" data-scanclose>Tutup</button></div>
       <div class="small">${r.total ? `Total <b class="num">${rp(r.total)}</b>${r.totalSure ? "" : ` <span class="c-warn">(perkiraan, cek lagi)</span>`}` : `<span class="c-out">Total tidak terbaca. Isi jumlahnya manual.</span>`}${r.date ? " · " + dayLabel(r.date) : " · tanggal tidak terbaca, dipakai hari ini"}</div>
-      ${r.items.length ? `<details><summary>${r.items.length} barang terbaca</summary><ul class="scanitems">${r.items.map(i => `<li><span>${esc(i.name)}</span><span class="num">${rp(i.amount)}</span></li>`).join("")}</ul></details>` : ""}
-      ${canSplit ? `<button type="button" class="btn sm" data-peritem>Catat per barang (${r.items.length} transaksi)</button>` : ""}
-      <div class="small muted">Periksa jumlah, kategori, dan tanggal di bawah, lalu tekan Simpan.</div>
+      <details ${scanOpen ? "open" : ""} data-sdetails><summary>${r.items.length ? `${r.items.length} barang terbaca · periksa & ubah` : "Tambah rincian barang"}</summary>
+        <div class="srows">${rows}</div>
+        <div class="sp" style="margin-top:10px"><button type="button" class="btn sm" data-sadd>+ Tambah barang</button></div>
+        <p class="ssum ${ss.cls}" id="scanSum">${ss.html}</p>
+      </details>
+      ${n >= 2 ? `<button type="button" class="btn sm" data-peritem>Catat per barang (${n} transaksi)</button>` : ""}
+      <div class="small muted">Semua kolom bisa diubah sebelum disimpan. Periksa jumlah, kategori, dan tanggal di bawah, lalu tekan Simpan.</div>
     </div>`;
+  };
+  const refreshScanPanel = (el, focusSel) => {
+    const old = q(".scanres", el); if (!old) return;
+    const tmp = document.createElement("div"); tmp.innerHTML = scanPanel(); old.replaceWith(tmp.firstElementChild);
+    if (focusSel) q(focusSel, el)?.focus();
+  };
+  const onItemInput = (el, e) => {
+    const f = e.target.dataset && e.target.dataset.f; const row = e.target.closest(".srow");
+    if (!f || !row || !scanRes) return;
+    const it = scanRes.items[+row.dataset.i]; if (!it) return;
+    if (f === "amount") {
+      if (/^[\d.]*$/.test(e.target.value)) { const v = parseAmount(e.target.value); e.target.value = v ? NF.format(v) : ""; }
+      it.amount = parseAmount(e.target.value);
+    } else if (f === "name") it.name = e.target.value;
+    else if (f === "cat") it.cat = e.target.value;
+    const ss = scanSumHTML(), sumEl = q("#scanSum", el); if (sumEl) { sumEl.className = "ssum " + ss.cls; sumEl.innerHTML = ss.html; }
+    const n = scanRes.items.filter(i => i.amount > 0).length, pb = q("[data-peritem]", el);
+    if (pb) pb.textContent = `Catat per barang (${n} transaksi)`;
+    if ((n >= 2) !== !!pb) { scanOpen = true; refreshScanPanel(el, `.srow[data-i="${row.dataset.i}"] [data-f="${f}"]`); }
   };
   async function doScan(el, file) {
     if (!window.KantongStruk) { toast("Pembaca struk gagal dimuat. Muat ulang halaman."); return; }
@@ -956,7 +1006,8 @@ function txSheet(existing, preset = {}, opts = {}) {
       const known = r.merchantCat && cats().some(c => c.id === r.merchantCat) ? r.merchantCat : "";
       const g = known || (guessCategory([r.merchant, ...r.items.map(i => i.name)].join(" "), "out") || {}).id;
       if (g) t.cat = g;
-      scanRes = r; scanBusy = false;
+      r.items = r.items.map(i => ({ ...i, cat: (guessCategory(i.name, "out") || {}).id || g || "c-other-out" }));
+      scanRes = r; scanBusy = false; scanOpen = false;
       { const sm = q("#smart", el); const sv = sm ? sm.value : ""; mount(el); const s2 = q("#smart", el); if (s2) s2.value = sv; }
       if (!r.total && !r.items.length) toast("Struk sulit dibaca. Coba foto lebih dekat, lurus, dan terang.");
     } catch (e) {
@@ -968,7 +1019,8 @@ function txSheet(existing, preset = {}, opts = {}) {
     readForm(el);
     const r = scanRes; if (!r) return;
     const recCat = t.cat || "c-other-out", date = t.date || todayISO(), wallet = t.wallet;
-    const list = r.items.map(it => ({ name: it.name, amount: it.amount, cat: (guessCategory(it.name, "out") || {}).id || recCat }));
+    const list = r.items.filter(it => it.amount > 0).map(it => ({ name: (it.name || "").trim() || "Barang", amount: it.amount, cat: it.cat || recCat }));
+    if (!list.length) { toast("Isi harga minimal satu barang."); return; }
     const sum = list.reduce((a, i) => a + i.amount, 0);
     if (r.total && r.total > sum) list.push({ name: "Pajak & biaya lain", amount: r.total - sum, cat: recCat });
     const k = mKey(date), ids = [], base = Date.now();
@@ -1000,7 +1052,10 @@ function txSheet(existing, preset = {}, opts = {}) {
   const mount = el => {
     el.innerHTML = body();
     const amt = q("#amt", el), smart = q("#smart", el), note = q("#note", el), dt = q("#dt", el);
-    amt.addEventListener("input", () => { if (/^[\d.]*$/.test(amt.value)) { const v = parseAmount(amt.value); amt.value = v ? NF.format(v) : ""; } });
+    amt.addEventListener("input", () => {
+      if (/^[\d.]*$/.test(amt.value)) { const v = parseAmount(amt.value); amt.value = v ? NF.format(v) : ""; }
+      if (scanRes) { scanRes.total = parseAmount(amt.value); scanRes.totalSure = true; const ss = scanSumHTML(), sumEl = q("#scanSum", el); if (sumEl) { sumEl.className = "ssum " + ss.cls; sumEl.innerHTML = ss.html; } }
+    });
     amt.addEventListener("blur", () => { const v = parseAmount(amt.value); amt.value = v ? NF.format(v) : ""; });
     if (smart) {
       smart.addEventListener("input", () => {
@@ -1022,7 +1077,7 @@ function txSheet(existing, preset = {}, opts = {}) {
     const sf = q("#scanFile", el);
     if (sf) sf.addEventListener("change", () => { const f = sf.files && sf.files[0]; sf.value = ""; if (f) doScan(el, f); });
     dt.addEventListener("change", () => el.querySelectorAll("[data-pd]").forEach(x => x.setAttribute("aria-pressed", x.dataset.pd === dt.value)));
-    q("#txForm", el).addEventListener("submit", e => { e.preventDefault(); save(el, false); });
+    q("#txForm", el).addEventListener("submit", e => { e.preventDefault(); if (document.activeElement && document.activeElement.closest(".srow")) { document.activeElement.blur(); return; } save(el, false); });
   };
   const onClick = (el, e) => {
     const b = e.target.closest("button"); if (!b || !el.contains(b)) return;
@@ -1034,6 +1089,8 @@ function txSheet(existing, preset = {}, opts = {}) {
     else if (b.hasAttribute("data-scan")) { q("#scanFile", el)?.click(); }
     else if (b.hasAttribute("data-scanclose")) { readForm(el); scanRes = null; rerender(el); }
     else if (b.hasAttribute("data-peritem")) { savePerItem(el); }
+    else if (b.dataset.sdel != null) { scanRes.items.splice(+b.dataset.sdel, 1); scanOpen = true; refreshScanPanel(el); }
+    else if (b.hasAttribute("data-sadd")) { scanRes.items.push({ name: "", amount: 0, cat: t.cat || "c-other-out" }); scanOpen = true; refreshScanPanel(el, `.srow[data-i="${scanRes.items.length - 1}"] [data-f="name"]`); }
     else if (b.hasAttribute("data-again")) { save(el, true); }
     else if (b.hasAttribute("data-del")) { confirmBox(q("#txForm", el), "Hapus transaksi ini?", "Hapus", () => { delete S.months[prevMonth].tx[t.id]; saveMonth(prevMonth); sheetClose(); render(); toastUndo("Transaksi dihapus", () => { (S.months[prevMonth] ||= { tx: {} }).tx[existing.id] = existing; saveMonth(prevMonth); render(); }); }); }
   };
@@ -1052,7 +1109,7 @@ function txSheet(existing, preset = {}, opts = {}) {
     sheetClose();
     if (again) txSheet(null, { type: t.type, wallet: t.wallet, date: t.date });
   }
-  openSheet(existing ? "Ubah transaksi" : "Catat transaksi", "", el => { mount(el); el.addEventListener("click", e => onClick(el, e)); if (opts.scan) { q("#scanFile", el)?.click(); return; } const sm = q("#smart", el); if (sm && window.matchMedia("(min-width:700px)").matches) setTimeout(() => sm.focus(), 30); });
+  openSheet(existing ? "Ubah transaksi" : "Catat transaksi", "", el => { mount(el); el.addEventListener("click", e => onClick(el, e)); el.addEventListener("input", e => onItemInput(el, e)); el.addEventListener("change", e => { if (e.target.dataset && e.target.dataset.f === "cat") onItemInput(el, e); }); el.addEventListener("toggle", e => { if (e.target.matches && e.target.matches("[data-sdetails]")) scanOpen = e.target.open; }, true); if (opts.scan) { q("#scanFile", el)?.click(); return; } const sm = q("#smart", el); if (sm && window.matchMedia("(min-width:700px)").matches) setTimeout(() => sm.focus(), 30); });
 }
 
 function simpleForm(title, fields, { onSave, onDelete, deleteMsg, saveLabel = "Simpan" }) {

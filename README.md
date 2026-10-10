@@ -16,6 +16,7 @@ Panduan menyiapkan login Google, Supabase, dan Netlify: lihat [SETUP.md](SETUP.m
 - Laporan bulanan dan tren 6 bulan
 - Ekspor CSV, cadangan & pulihkan (JSON)
 - Masuk dengan Google & sinkron antarperangkat (Supabase)
+- Kunci PIN 6 angka per perangkat, dengan kunci otomatis saat aplikasi ditinggal
 
 ## Privasi
 Bisa dipakai tanpa akun (data di browser). Masuk dengan Google untuk menyinkronkan catatan antarperangkat; data dikunci per pengguna dengan Row Level Security Supabase. Lihat [privasi.html](privasi.html).

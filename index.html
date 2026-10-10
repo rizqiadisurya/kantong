@@ -278,6 +278,31 @@ kbd{font-family:var(--f-body);font-size:12px;background:var(--surface-2);border:
 .btn.google{background:var(--surface);border:1.5px solid var(--line);color:var(--fg)}
 .btn.google:hover{border-color:var(--accent)}
 .side .foot a,.card a{color:var(--accent)}
+.lock{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:calc(24px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));overflow:auto}
+.lock-in{width:100%;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;margin:auto}
+.lock h1{font-size:22px;margin-top:10px}
+.lock p{margin:0}
+.brand-mark.big{width:56px;height:56px;border-radius:16px;font-size:28px}
+body.is-locked .app,body.is-locked #sheetRoot{visibility:hidden}
+.pin{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;margin-top:14px}
+.pin-dots{display:flex;gap:14px}
+.pin-dots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted);transition:background .1s,border-color .1s}
+.pin-dots i.on{background:var(--accent);border-color:var(--accent)}
+.pin-msg{min-height:20px;font-size:13px;color:var(--muted);margin:0;max-width:300px}
+.pin-msg.err{color:var(--out);font-weight:600}
+.pin-keys{display:grid;grid-template-columns:repeat(3,68px);gap:12px 22px;justify-content:center}
+.pin-keys button{width:68px;height:68px;border-radius:50%;border:0;background:var(--surface);box-shadow:var(--shadow);font-family:var(--f-display);font-size:26px;font-weight:700;display:grid;place-items:center}
+.pin-keys button:active{background:var(--accent-soft)}
+.pin-keys button[data-k=del]{background:none;box-shadow:none}
+.pin-keys button svg{width:26px;height:26px}
+.pin.busy .pin-keys button{opacity:.45;pointer-events:none}
+.pin.shake .pin-dots{animation:shake .35s}
+@keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+@media (prefers-reduced-motion:reduce){.pin.shake .pin-dots{animation:none}}
+.forgot{margin-top:12px;background:var(--surface);border-radius:14px;padding:14px;text-align:left;font-size:13.5px;display:flex;flex-direction:column;gap:10px;width:100%}
+.forgot p{margin:0}
+.pin-sheet{display:flex;flex-direction:column;align-items:center;gap:4px;padding-bottom:10px;text-align:center}
+.pin-title{font-weight:700;margin:0;font-size:16px}
 .loading{display:grid;place-items:center;min-height:60vh;color:var(--muted)}
 .muted{color:var(--muted)} .small{font-size:12.5px}
 .sp{display:flex;justify-content:space-between;gap:8px;align-items:center}
@@ -298,6 +323,7 @@ kbd{font-family:var(--f-body);font-size:12px;background:var(--surface-2);border:
 </div>
 <div id="sheetRoot"></div>
 <div id="toastRoot"></div>
+<div id="lockRoot"></div>
 
 <script src="config.js"></script>
 <script src="struk.js"></script>
@@ -362,6 +388,8 @@ const ICON = {
   pie:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12A9 9 0 1 1 12 3v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>',
   repeat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 12V10a4 4 0 0 1 4-4h14M7 22l-4-4 4-4"/><path d="M21 12v2a4 4 0 0 1-4 4H3"/></svg>',
   tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+  lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  bksp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="m12 9 6 6M18 9l-6 6"/></svg>',
   db:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
   left:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   right:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
@@ -642,15 +670,15 @@ const hasData = () => Object.keys(S.months).length > 0;
 const NAV = [
   ["home", "Beranda", "home"], ["history", "Riwayat", "list"], ["report", "Laporan", "chart"],
   ["budget", "Anggaran", "pie"], ["wallets", "Dompet", "wallet"], ["recurring", "Tagihan Rutin", "repeat"],
-  ["goals", "Target Tabungan", "target"], ["categories", "Kategori", "tag"], ["data", "Data & Cadangan", "db"],
+  ["goals", "Target Tabungan", "target"], ["categories", "Kategori", "tag"], ["security", "Kunci PIN", "lock"], ["data", "Data & Cadangan", "db"],
 ];
-const SUBS = ["budget", "wallets", "recurring", "goals", "categories", "data"];
+const SUBS = ["budget", "wallets", "recurring", "goals", "categories", "security", "data"];
 function renderShell0() { if (S.state) renderShell(); }
 function renderShell() {
   $("#side").innerHTML = `<div class="brand"><span class="brand-mark">K</span>Kantong</div>` +
     NAV.map(([v, l, i]) => `<button class="navbtn" data-go="${v}" ${UI.view === v ? 'aria-current="page"' : ""}>${ICON[i]}${l}</button>`).join("") +
     `<button class="navbtn add-big" data-act="add">${ICON.plus}Catat transaksi</button><button class="navbtn" data-act="scan">${ICON.camera}Scan struk</button>
-     <div class="foot"><div style="margin-bottom:10px">${accountHTML(true)}</div><span data-status>${statusHTML()}</span><div style="margin-top:6px">Tekan <kbd>N</kbd> untuk catat cepat</div><div style="margin-top:6px"><a href="privasi.html">Kebijakan privasi</a></div></div>`;
+     <div class="foot">${Lock.enabled() ? `<button class="navbtn" data-act="pinLockNow" style="width:100%;margin-bottom:8px">${ICON.lock}Kunci sekarang</button>` : ""}<div style="margin-bottom:10px">${accountHTML(true)}</div><span data-status>${statusHTML()}</span><div style="margin-top:6px">Tekan <kbd>N</kbd> untuk catat cepat</div><div style="margin-top:6px"><a href="privasi.html">Kebijakan privasi</a></div></div>`;
   const tabSel = v => (v === "more" ? (UI.view === "more" || SUBS.includes(UI.view)) : UI.view === v) ? 'aria-current="page"' : "";
   $("#tabbar").innerHTML =
     `<button class="tab" data-go="home" ${tabSel("home")}>${ICON.home}Beranda</button>
@@ -680,7 +708,7 @@ function render() {
   if (!S.state) return;
   renderShell();
   const v = UI.view;
-  const fn = { home: vHome, history: vHistory, report: vReport, more: vMore, budget: vBudget, wallets: vWallets, recurring: vRecurring, goals: vGoals, categories: vCategories, data: vData }[v] || vHome;
+  const fn = { home: vHome, history: vHistory, report: vReport, more: vMore, budget: vBudget, wallets: vWallets, recurring: vRecurring, goals: vGoals, categories: vCategories, security: vSecurity, data: vData }[v] || vHome;
   const mergeBar = !S.demo && S.mode === "supa" && S.pendingLocal ? `<div class="banner"><span>Ada ${S.pendingLocal} catatan di browser ini yang belum masuk ke akunmu.</span><span style="display:flex;gap:6px"><button class="btn sm" data-act="mergeSkip">Abaikan</button><button class="btn sm primary" data-act="merge">Pindahkan ke akun</button></span></div>` : "";
   const demoBar = mergeBar + (S.demo ? `<div class="banner"><span>Kamu sedang melihat data contoh. Perubahan tidak disimpan.</span><button class="btn sm" data-act="exitDemo">Mulai dengan data sendiri</button></div>` : "");
   $("#main").innerHTML = demoBar + fn();
@@ -834,7 +862,7 @@ function vReport() {
 
 function vMore() {
   const items = NAV.filter(([v]) => SUBS.includes(v) || v === "report");
-  const desc = { report: "Grafik kategori & tren 6 bulan", budget: "Batas belanja per kategori", wallets: "Tunai, bank, e-wallet, transfer", recurring: "Gaji, listrik, langganan", goals: "Dana darurat, liburan, dll.", categories: "Ubah ikon, nama, kata kunci", data: "Ekspor CSV, cadangan, pulihkan" };
+  const desc = { report: "Grafik kategori & tren 6 bulan", budget: "Batas belanja per kategori", wallets: "Tunai, bank, e-wallet, transfer", recurring: "Gaji, listrik, langganan", goals: "Dana darurat, liburan, dll.", categories: "Ubah ikon, nama, kata kunci", security: "PIN untuk membuka aplikasi", data: "Ekspor CSV, cadangan, pulihkan" };
   return `${head("Lainnya", "Menu")}<div class="menu">${items.map(([v, l, i]) => `<button class="row" data-go="${v}"><span class="ico" style="background:var(--accent-soft);color:var(--accent)">${ICON[i].replace("<svg", '<svg width="20" height="20"')}</span><span class="mid"><div class="t1">${l}</div><div class="t2">${desc[v]}</div></span>${ICON.right.replace("<svg", '<svg width="16" height="16" style="color:var(--faint)"')}</button>`).join("")}</div><div class="card" style="margin-top:14px;display:flex;flex-direction:column;gap:10px"><span data-status>${statusHTML()}</span>${accountHTML()}<a class="small" href="privasi.html">Kebijakan privasi</a></div>`;
 }
 
@@ -1290,7 +1318,7 @@ function toastUndo(msg, undo) {
 /* ---------- events ---------- */
 function go(v) { UI.view = v; try { localStorage.setItem("kantong.view", v); } catch (e) {} render(); window.scrollTo(0, 0); }
 document.addEventListener("click", e => {
-  const b = e.target.closest("[data-go],[data-act],[data-edit],[data-pay],[data-budget],[data-wallet],[data-rec],[data-goal],[data-gadd],[data-cat],[data-ftype],[data-catfilter]");
+  const b = e.target.closest("[data-go],[data-act],[data-edit],[data-pay],[data-budget],[data-wallet],[data-rec],[data-goal],[data-gadd],[data-cat],[data-ftype],[data-catfilter],[data-after]");
   if (!b || b.closest("#sheetRoot")) return;
   const d = b.dataset;
   if (d.go) return go(d.go);
@@ -1302,6 +1330,7 @@ document.addEventListener("click", e => {
   if (d.goal != null) return goalSheet(d.goal);
   if (d.gadd) return goalAddSheet(d.gadd);
   if (d.cat != null) return catSheet(d.cat, d.ctype);
+  if (d.after != null) { Lock.setAfter(+d.after); document.querySelectorAll("[data-after]").forEach(x => x.setAttribute("aria-pressed", x === b)); toast("Pengaturan kunci otomatis disimpan"); return; }
   if (d.ftype) { UI.f.type = d.ftype; document.querySelectorAll("[data-ftype]").forEach(x => x.setAttribute("aria-pressed", x === b)); return renderHistoryList(); }
   if (d.catfilter) { UI.f = { q: "", type: "out", cat: d.catfilter, wallet: "" }; return go("history"); }
   switch (d.act) {
@@ -1319,6 +1348,10 @@ document.addEventListener("click", e => {
     case "csv": return exportCSV();
     case "backup": return exportBackup();
     case "wipe": return wipeAll();
+    case "pinSet": return pinSheet("set");
+    case "pinChange": return pinSheet("change");
+    case "pinOff": return pinSheet("off");
+    case "pinLockNow": return showLock();
   }
 });
 document.addEventListener("input", e => {
@@ -1330,6 +1363,7 @@ document.addEventListener("change", e => {
   if (e.target.id === "importFile" && e.target.files[0]) { importBackup(e.target.files[0]); e.target.value = ""; }
 });
 document.addEventListener("keydown", e => {
+  if (Lock.locked) return;
   if (e.key === "Escape" && sheetClose) { sheetClose(); return; }
   if (sheetClose || !S.state) return;
   const tag = (e.target.tagName || "").toLowerCase(); if (["input", "textarea", "select"].includes(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1338,6 +1372,145 @@ document.addEventListener("keydown", e => {
 });
 
 /* boot */
+/* ---------- Kunci PIN (per perangkat) ---------- */
+const PIN_KEY = "kantong.pin.v1", PIN_FAIL = "kantong.pin.fail", PIN_LEN = 6;
+const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+async function pinHash(pin, salt, iter) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
+  return b64(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: unb64(salt), iterations: iter }, key, 256));
+}
+const Lock = {
+  locked: false, hiddenAt: 0,
+  cfg() { return lsGet(PIN_KEY); },
+  enabled() { const c = this.cfg(); return !!(c && c.hash); },
+  async set(pin) { const prev = this.cfg() || {}, salt = b64(crypto.getRandomValues(new Uint8Array(16))), iter = 150000; return lsSet(PIN_KEY, { v: 1, salt, iter, hash: await pinHash(pin, salt, iter), after: prev.after ?? 1 }); },
+  async check(pin) { const c = this.cfg(); if (!c) return true; return (await pinHash(pin, c.salt, c.iter)) === c.hash; },
+  clear() { lsSet(PIN_KEY, null); lsSet(PIN_FAIL, null); },
+  setAfter(min) { const c = this.cfg(); if (c) { c.after = min; lsSet(PIN_KEY, c); } },
+};
+const weakPin = p => /^(\d)\1+$/.test(p) || "01234567890".includes(p) || "09876543210".includes(p);
+function pinPadHTML(id) {
+  return `<div class="pin" id="${id}"><div class="pin-dots" aria-hidden="true">${Array.from({ length: PIN_LEN }, () => "<i></i>").join("")}</div><p class="pin-msg" role="alert"></p><div class="pin-keys">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button type="button" data-k="${n}">${n}</button>`).join("")}<span></span><button type="button" data-k="0">0</button><button type="button" data-k="del" aria-label="Hapus satu angka">${ICON.bksp}</button></div></div>`;
+}
+function bindPinPad(root, onComplete) {
+  let val = "";
+  const dots = root.querySelectorAll(".pin-dots i"), msg = root.querySelector(".pin-msg");
+  const paint = () => dots.forEach((d, i) => d.classList.toggle("on", i < val.length));
+  const push = k => {
+    if (root.classList.contains("busy")) return;
+    if (k === "del") val = val.slice(0, -1); else if (val.length < PIN_LEN) val += k;
+    paint();
+    if (val.length === PIN_LEN) { const v = val; root.classList.add("busy"); setTimeout(() => onComplete(v), 120); }
+  };
+  root.addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (b) push(b.dataset.k); });
+  const onKey = e => {
+    if (!root.isConnected) { document.removeEventListener("keydown", onKey, true); return; }
+    if (/^\d$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); push(e.key); }
+    else if (e.key === "Backspace") { e.preventDefault(); e.stopPropagation(); push("del"); }
+  };
+  document.addEventListener("keydown", onKey, true);
+  return {
+    reset(m, isErr) { val = ""; paint(); root.classList.remove("busy"); msg.textContent = m || ""; msg.classList.toggle("err", !!isErr); if (isErr) { root.classList.remove("shake"); void root.offsetWidth; root.classList.add("shake"); } },
+    disable(m) { val = ""; paint(); root.classList.add("busy"); msg.textContent = m; msg.classList.add("err"); },
+    destroy() { document.removeEventListener("keydown", onKey, true); },
+  };
+}
+function showLock() {
+  if (!Lock.enabled() || Lock.locked) return;
+  Lock.locked = true; document.body.classList.add("is-locked");
+  if (sheetClose) sheetClose();
+  $("#lockRoot").innerHTML = `<div class="lock" role="dialog" aria-modal="true" aria-label="Kantong terkunci"><div class="lock-in">
+    <span class="brand-mark big">K</span><h1>Kantong terkunci</h1><p class="muted">Masukkan PIN ${PIN_LEN} angka</p>
+    ${pinPadHTML("lockPad")}
+    <button type="button" class="link" id="forgotPin">Lupa PIN?</button><div id="forgotBox" style="width:100%"></div>
+  </div></div>`;
+  let timer = null;
+  const pad = bindPinPad($("#lockPad"), async pin => {
+    const f = lsGet(PIN_FAIL) || { n: 0, until: 0 };
+    if (Date.now() < f.until) return waitMsg();
+    if (await Lock.check(pin)) { lsSet(PIN_FAIL, null); pad.destroy(); clearTimeout(timer); unlock(); return; }
+    f.n++;
+    if (f.n >= 5) f.until = Date.now() + Math.min(15 * 60e3, 30e3 * 2 ** (f.n - 5));
+    lsSet(PIN_FAIL, f);
+    if (f.until > Date.now()) waitMsg(); else pad.reset(`PIN salah. ${5 - f.n} kali lagi sebelum dikunci sementara.`, true);
+  });
+  function waitMsg() {
+    const f = lsGet(PIN_FAIL) || { until: 0 };
+    const tick = () => { const sec = Math.ceil((f.until - Date.now()) / 1000); if (sec <= 0) { pad.reset("Silakan coba lagi."); return; } pad.disable(`Terlalu banyak percobaan. Coba lagi dalam ${sec} detik.`); timer = setTimeout(tick, 1000); };
+    tick();
+  }
+  const f0 = lsGet(PIN_FAIL); if (f0 && f0.until > Date.now()) waitMsg();
+  $("#forgotPin").onclick = renderForgot;
+}
+function unlock() { Lock.locked = false; document.body.classList.remove("is-locked"); $("#lockRoot").innerHTML = ""; }
+function renderForgot() {
+  const box = $("#forgotBox"); if (!box) return;
+  if (S.mode === "loading" || S.loading) { box.innerHTML = `<div class="forgot"><p>Tunggu sebentar, masih memuat…</p></div>`; setTimeout(renderForgot, 800); return; }
+  if (S.mode === "supa") {
+    box.innerHTML = `<div class="forgot"><p>Keluar dari akun Google di perangkat ini untuk menghapus PIN. Catatanmu tetap aman di akun dan muncul lagi setelah kamu masuk.</p><button type="button" class="btn primary" id="fpOut">Keluar & hapus PIN</button></div>`;
+    $("#fpOut").onclick = async () => {
+      try { await sb.auth.signOut(); } catch (e) {}
+      try { localStorage.removeItem(LS_KEY); } catch (e) {}
+      Lock.clear(); enterLocal(); unlock(); toast("PIN dihapus. Masuk lagi dengan Google untuk melihat catatanmu.");
+    };
+  } else {
+    box.innerHTML = `<div class="forgot"><p>Catatanmu hanya tersimpan di browser ini, jadi PIN tidak bisa dipulihkan. Menghapus PIN juga <b>menghapus semua catatan di perangkat ini</b>.</p><button type="button" class="btn danger" id="fpWipe">Hapus PIN & semua catatan</button></div>`;
+    $("#fpWipe").onclick = () => {
+      const b = $("#fpWipe");
+      if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Yakin? Tekan sekali lagi untuk menghapus"; return; }
+      try { localStorage.removeItem(LS_KEY); } catch (e) {}
+      Lock.clear(); S.demo = false; S.state = defaultState(); S.months = {}; unlock(); UI.view = "home"; render(); toast("PIN dan catatan di perangkat ini sudah dihapus");
+    };
+  }
+}
+function pinSheet(mode) {
+  if (!window.crypto || !crypto.subtle) { toast("Browser ini tidak mendukung PIN. Buka Kantong lewat https."); return; }
+  let step = mode === "set" ? "new" : "current", first = "";
+  const titles = { current: "Masukkan PIN yang sekarang", new: `Buat PIN ${PIN_LEN} angka`, confirm: "Ulangi PIN baru" };
+  const title = mode === "off" ? "Matikan PIN" : mode === "change" ? "Ganti PIN" : "Pasang PIN";
+  openSheet(title, `<div class="pin-sheet"><p class="pin-title" id="pinTitle"></p><p class="small muted" id="pinSub"></p>${pinPadHTML("setPad")}</div>`, el => {
+    const setT = () => { $("#pinTitle", el).textContent = titles[step]; $("#pinSub", el).textContent = step === "new" ? "Hindari tanggal lahir atau angka berurutan." : ""; };
+    setT();
+    const pad = bindPinPad($("#setPad", el), async pin => {
+      if (step === "current") {
+        if (!(await Lock.check(pin))) return pad.reset("PIN salah.", true);
+        if (mode === "off") { Lock.clear(); pad.destroy(); sheetClose(); render(); toast("PIN dimatikan"); return; }
+        step = "new"; setT(); return pad.reset("");
+      }
+      if (step === "new") {
+        if (weakPin(pin)) return pad.reset("PIN terlalu mudah ditebak. Pilih angka lain.", true);
+        first = pin; step = "confirm"; setT(); return pad.reset("");
+      }
+      if (pin !== first) { step = "new"; setT(); return pad.reset("PIN tidak sama. Ulangi dari awal.", true); }
+      const ok = await Lock.set(pin);
+      pad.destroy(); sheetClose(); render();
+      toast(ok ? (mode === "change" ? "PIN berhasil diganti" : "PIN dipasang. Kantong akan meminta PIN saat dibuka.") : "PIN gagal disimpan karena penyimpanan browser diblokir.");
+    });
+  });
+}
+function vSecurity() {
+  const on = Lock.enabled(), c = Lock.cfg() || {}, after = c.after ?? 1;
+  return `${head("Kunci PIN", "Keamanan perangkat ini", "", true)}
+  <div class="grid half">
+    <div class="card"><div class="sp" style="margin-bottom:6px"><h2 style="font-size:16px">PIN ${PIN_LEN} angka</h2>${on ? `<span class="pill ok">Aktif</span>` : `<span class="pill muted">Belum aktif</span>`}</div>
+      <p class="muted small">Kantong meminta PIN setiap kali dibuka di perangkat ini. PIN hanya berlaku di perangkat ini. Di HP atau laptop lain, pasang PIN sendiri.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${on ? `<button class="btn primary" data-act="pinLockNow">${ICON.lock.replace("<svg", '<svg width="16" height="16"')}Kunci sekarang</button><button class="btn" data-act="pinChange">Ganti PIN</button><button class="btn danger" data-act="pinOff">Matikan PIN</button>` : `<button class="btn primary" data-act="pinSet">Pasang PIN</button>`}</div>
+    </div>
+    ${on ? `<div class="card"><h2 style="font-size:16px;margin-bottom:6px">Kunci otomatis</h2><p class="muted small">Minta PIN lagi setelah Kantong ditinggal, misalnya pindah aplikasi, buka tab lain, atau layar mati.</p>
+      <div class="seg">${[[0, "Langsung"], [1, "1 menit"], [5, "5 menit"], [15, "15 menit"]].map(([v, l]) => `<button data-after="${v}" aria-pressed="${after === v}">${l}</button>`).join("")}</div></div>` : ""}
+    <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Kalau lupa PIN</h2><p class="muted small">${S.mode === "supa" ? "Pilih <b>Lupa PIN?</b> di layar kunci, lalu keluar dari akun. Catatanmu tetap aman di akun Google-mu. Setelah masuk lagi, pasang PIN baru." : "Catatanmu hanya tersimpan di browser ini, jadi lupa PIN berarti catatan di perangkat ini harus dihapus. Masuk dengan Google atau unduh cadangan berkala supaya tetap aman."}</p></div>
+  </div>`;
+}
+document.addEventListener("visibilitychange", () => {
+  if (!Lock.enabled() || Lock.locked) return;
+  const after = Lock.cfg().after ?? 1;
+  if (document.visibilityState === "hidden") { Lock.hiddenAt = Date.now(); if (after === 0) showLock(); }
+  else if (Lock.hiddenAt && Date.now() - Lock.hiddenAt >= after * 60e3) showLock();
+});
+if (Lock.enabled()) showLock();
 boot();
 })();
 </script>

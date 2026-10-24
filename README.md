@@ -16,6 +16,7 @@ Panduan menyiapkan login Google, Supabase, dan Netlify: lihat [SETUP.md](SETUP.m
 - Laporan bulanan dan tren 6 bulan
 - Ekspor CSV, cadangan & pulihkan (JSON)
 - Masuk dengan Google & sinkron antarperangkat (Supabase)
+- Bisa dipasang di Home Screen iPhone/Android (PWA) dan tetap terbuka saat offline
 - Kunci PIN 6 angka per perangkat, dengan kunci otomatis saat aplikasi ditinggal
 
 ## Privasi

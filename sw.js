@@ -1,6 +1,6 @@
 /* Kantong service worker: aplikasi tetap terbuka saat offline.
  * Data akun disimpan Firestore sendiri (IndexedDB), bukan di cache ini. */
-const VERSION = "kantong-v2";
+const VERSION = "kantong-v3";
 const SHELL = ["./", "index.html", "struk.js", "config.js", "privasi.html", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 const CDN = /^https:\/\/(cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com|www\.gstatic\.com\/firebasejs)\//;

@@ -2,11 +2,24 @@
   publish = "."
   command = ""
 
+# Login Google lewat domain sendiri (dibutuhkan Safari/iPhone untuk login redirect Firebase)
+[[redirects]]
+  from = "/__/auth/*"
+  to = "https://kantong-511100.firebaseapp.com/__/auth/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/__/firebase/*"
+  to = "https://kantong-511100.firebaseapp.com/__/firebase/:splat"
+  status = 200
+  force = true
+
 [[headers]]
   for = "/*"
   [headers.values]
     X-Content-Type-Options = "nosniff"
-    X-Frame-Options = "DENY"
+    X-Frame-Options = "SAMEORIGIN"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
 

@@ -23,7 +23,7 @@ ul{padding-left:20px} li{margin:4px 0}
 <main>
 <a class="back" href="./">← Kembali ke Kantong</a>
 <h1>Kebijakan Privasi</h1>
-<p class="muted">Diperbarui 9 Oktober 2026</p>
+<p class="muted">Diperbarui 4 November 2026</p>
 
 <p>Kantong adalah aplikasi pencatatan keuangan pribadi. Halaman ini menjelaskan data apa yang disimpan, di mana, dan siapa yang bisa mengaksesnya.</p>
 
@@ -45,7 +45,7 @@ ul{padding-left:20px} li{margin:4px 0}
 <p>PIN disimpan hanya di perangkatmu dalam bentuk acak (hash), tidak dalam bentuk angka aslinya, dan tidak pernah dikirim ke server. PIN berfungsi sebagai kunci layar agar orang lain yang memegang perangkatmu tidak bisa langsung melihat catatanmu.</p>
 
 <h2>Di mana data disimpan</h2>
-<p>Data akun disimpan di database Supabase. Setiap baris data terkunci ke akunmu dengan aturan keamanan database (Row Level Security), sehingga pengguna lain tidak bisa membaca atau mengubahnya.</p>
+<p>Data akun disimpan di Google Cloud Firestore (Firebase), region Jakarta. Data setiap pengguna dikunci dengan aturan keamanan database, sehingga pengguna lain tidak bisa membaca atau mengubahnya. Supaya Kantong tetap bisa dibuka tanpa internet, salinan catatanmu juga disimpan di perangkat, dan salinan itu dihapus saat kamu keluar dari akun.</p>
 <p>Pengelola Kantong, sebagai pemilik database, secara teknis dapat mengakses data tersebut. Pengelola tidak akan membaca, menjual, atau membagikan datamu, kecuali bila diwajibkan hukum.</p>
 
 <h2>Yang tidak kami lakukan</h2>

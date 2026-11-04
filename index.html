@@ -507,119 +507,83 @@ const UI = { view: "home", month: curMonth(), f: { q: "", type: "all", cat: "", 
 try { const v = localStorage.getItem("kantong.view"); if (v) UI.view = v; } catch (e) {}
 const LS_KEY = "kantong.data.v1";
 const CFG = window.KANTONG_CONFIG || {};
-const SUPA_ON = !!(CFG.supabaseUrl && CFG.supabaseAnonKey);
-let sb = null, me = null, downloads = null;
-let chain = Promise.resolve();
-S.synced = {}; S.syncedMonth = {};
+const FB_CFG = CFG.firebase || null;
+const CLOUD_ON = !!(FB_CFG && FB_CFG.apiKey && FB_CFG.projectId);
+const FB_VER = "10.12.2", FB_CDN = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
+let fb = null, auth = null, fdb = null, me = null, downloads = null;
+S.synced = {}; S.syncedMonth = {}; S.pending = 0;
 
 function loadLocal() {
   try { const raw = localStorage.getItem(LS_KEY); if (raw) { const d = JSON.parse(raw); return { state: normalize(d.state), months: d.months || {} }; } } catch (e) {}
   return null;
 }
 function saveLocal() { if (S.demo || S.mode !== "local") return; try { localStorage.setItem(LS_KEY, JSON.stringify({ state: S.state, months: S.months })); } catch (e) { toast("Penyimpanan browser penuh atau diblokir."); } }
-const ok = r => { if (r && r.error) throw r.error; return r; };
-function persist(fn) {
-  if (S.demo) return;
-  S.saving++; renderStatus();
-  chain = chain.then(() => S.mode === "supa" ? fn() : saveLocal())
-    .catch(e => {
-      const net = !navigator.onLine || /fetch|network|load failed/i.test(String(e && (e.message || e)));
-      if (S.mode === "supa" && net) { if (!S.dirty) toast("Sedang offline. Catatan disimpan di perangkat dan dikirim saat online."); S.dirty = true; return; }
-      toast("Gagal menyimpan ke akun. Periksa koneksi internet, lalu coba lagi. (" + (e && (e.message || e.code) || "galat") + ")");
-    })
-    .finally(() => { S.saving--; snapSave(); renderStatus(); });
+
+/* Tulis ke Firestore. Firestore langsung menyimpan di perangkat (juga saat offline)
+ * dan mengirim ke server begitu online, jadi janji tulis tidak ditunggu. */
+function track(p) {
+  S.pending++; renderStatus();
+  p.catch(e => toast("Gagal menyimpan ke akun: " + (e && (e.code || e.message) || "galat")))
+   .finally(() => { S.pending--; renderStatus(); });
 }
+const userRef = () => fb.doc(fdb, "users", me.id);
+const txCol = () => fb.collection(fdb, "users", me.id, "tx");
 function saveState() {
   if (S.demo) return;
-  if (S.mode === "supa") { const snap = clone(S.state); persist(() => sb.from("user_state").upsert({ user_id: me.id, data: snap, updated_at: new Date().toISOString() }).then(ok)); }
+  if (S.mode === "cloud") track(fb.setDoc(userRef(), { data: clone(S.state), updatedAt: fb.serverTimestamp() }));
   else saveLocal();
 }
+const toDoc = t => ({ type: t.type, amount: Math.round(t.amount), cat: t.cat || "", wallet: t.wallet, to: t.to || "", date: t.date, note: t.note || "", at: t.at || 0, updatedAt: fb.serverTimestamp() });
+const fromDoc = (id, d) => ({ id, type: d.type, amount: Number(d.amount), cat: d.cat || "", wallet: d.wallet, to: d.to || "", date: d.date, note: d.note || "", at: Number(d.at) || 0 });
 function saveMonth(k) {
   if (S.demo) return;
-  if (S.mode === "supa") persist(() => syncMonth(k)); else saveLocal();
-}
-
-/* Supabase rows <-> transactions */
-const toRow = t => ({ user_id: me.id, id: t.id, type: t.type, amount: Math.round(t.amount), cat: t.cat || null, wallet: t.wallet, to_wallet: t.to || null, date: t.date, note: t.note || "", at: t.at || 0, updated_at: new Date().toISOString() });
-const fromRow = r => ({ id: r.id, type: r.type, amount: Number(r.amount), cat: r.cat || "", wallet: r.wallet, to: r.to_wallet || "", date: r.date, note: r.note || "", at: Number(r.at) || 0 });
-async function syncMonth(k) {
-  const cur = (S.months[k] || {}).tx || {}; const ups = [], dels = [];
-  for (const id in cur) if (S.synced[id] !== JSON.stringify(cur[id])) ups.push(clone(cur[id]));
-  for (const id in S.syncedMonth) if (S.syncedMonth[id] === k && !cur[id]) dels.push(id);
-  for (let i = 0; i < ups.length; i += 500) {
-    const part = ups.slice(i, i + 500);
-    ok(await sb.from("transactions").upsert(part.map(toRow), { onConflict: "user_id,id" }));
-    part.forEach(t => { S.synced[t.id] = JSON.stringify(t); S.syncedMonth[t.id] = k; });
-  }
-  for (let i = 0; i < dels.length; i += 200) {
-    const part = dels.slice(i, i + 200);
-    ok(await sb.from("transactions").delete().eq("user_id", me.id).in("id", part));
-    part.forEach(id => { delete S.synced[id]; delete S.syncedMonth[id]; });
+  if (S.mode !== "cloud") { saveLocal(); return; }
+  const cur = (S.months[k] || {}).tx || {}, ops = [];
+  for (const id in cur) { const j = JSON.stringify(cur[id]); if (S.synced[id] !== j) { ops.push(["set", id, cur[id]]); S.synced[id] = j; S.syncedMonth[id] = k; } }
+  for (const id in S.syncedMonth) if (S.syncedMonth[id] === k && !cur[id]) { ops.push(["del", id]); delete S.synced[id]; delete S.syncedMonth[id]; }
+  for (let i = 0; i < ops.length; i += 450) {
+    const b = fb.writeBatch(fdb);
+    for (const [op, id, t] of ops.slice(i, i + 450)) { const ref = fb.doc(txCol(), id); if (op === "set") b.set(ref, toDoc(t)); else b.delete(ref); }
+    track(b.commit());
   }
 }
 async function fetchCloud() {
-  const st = ok(await sb.from("user_state").select("data").eq("user_id", me.id).maybeSingle()).data;
-  let rows = [];
-  for (let from = 0; ; from += 1000) {
-    const data = ok(await sb.from("transactions").select("id,type,amount,cat,wallet,to_wallet,date,note,at").order("date", { ascending: true }).order("id", { ascending: true }).range(from, from + 999)).data || [];
-    rows = rows.concat(data); if (data.length < 1000) break;
-  }
+  const [us, qs] = await Promise.all([fb.getDoc(userRef()), fb.getDocs(txCol())]);
   const months = {}, synced = {}, syncedMonth = {};
-  rows.forEach(r => { const t = fromRow(r); const k = mKey(t.date); (months[k] ||= { tx: {} }).tx[t.id] = t; synced[t.id] = JSON.stringify(t); syncedMonth[t.id] = k; });
-  return { state: st && st.data && Object.keys(st.data).length ? normalize(st.data) : null, months, synced, syncedMonth, count: rows.length };
+  qs.forEach(d => { const t = fromDoc(d.id, d.data()); const k = mKey(t.date); (months[k] ||= { tx: {} }).tx[t.id] = t; synced[t.id] = JSON.stringify(t); syncedMonth[t.id] = k; });
+  const data = us.exists() ? us.data().data : null;
+  return { state: data && Object.keys(data).length ? normalize(data) : null, months, synced, syncedMonth, count: qs.size, fromCache: us.metadata.fromCache };
 }
-/* Salinan data akun di perangkat, untuk dibuka saat offline */
-const SNAP_LAST = "kantong.cloud.last";
-function snapSave() {
-  if (S.mode !== "supa" || !me || S.demo || !S.state) return;
+/* Catatan dari versi lama (Supabase) yang masih tersimpan di perangkat ini */
+function legacyCloudData() {
   try {
-    localStorage.setItem("kantong.cloud." + me.id, JSON.stringify({ state: S.state, months: S.months, synced: S.synced, syncedMonth: S.syncedMonth, dirty: !!S.dirty, at: Date.now() }));
-    localStorage.setItem(SNAP_LAST, JSON.stringify({ id: me.id, email: me.email || "", user_metadata: me.user_metadata || {} }));
-  } catch (e) {}
+    const keys = Object.keys(localStorage).filter(k => /^kantong\.cloud\.(?!last$)/.test(k));
+    let best = null;
+    for (const k of keys) { const d = JSON.parse(localStorage.getItem(k) || "null"); if (d && d.state && (!best || (d.at || 0) > (best.at || 0))) best = d; }
+    return best ? { state: normalize(best.state), months: best.months || {}, keys } : null;
+  } catch (e) { return null; }
 }
-function snapLoad(id) { try { return JSON.parse(localStorage.getItem("kantong.cloud." + id) || "null"); } catch (e) { return null; } }
-function snapClear() { try { Object.keys(localStorage).filter(k => k.startsWith("kantong.cloud.")).forEach(k => localStorage.removeItem(k)); } catch (e) {} }
-function enterSnapshot(user, snap) {
-  me = user; S.mode = "supa"; S.loading = false; S.offline = true;
-  S.state = normalize(snap.state); S.months = snap.months || {}; S.synced = snap.synced || {}; S.syncedMonth = snap.syncedMonth || {}; S.dirty = !!snap.dirty;
-  render(); toast("Sedang offline. Menampilkan salinan terakhir dari akunmu.");
-}
-async function resync() {
-  if (S.mode !== "supa" || !me || S.demo || S.resyncing) return;
-  S.resyncing = true;
-  try {
-    if (sb) { const { data } = await sb.auth.getSession(); if (!data.session) { S.resyncing = false; return; } me = data.session.user; }
-    if (S.dirty) {
-      ok(await sb.from("user_state").upsert({ user_id: me.id, data: clone(S.state), updated_at: new Date().toISOString() }));
-      const ks = new Set([...Object.keys(S.months), ...Object.values(S.syncedMonth)]);
-      for (const k of ks) await syncMonth(k);
-      S.dirty = false; toast("Catatan offline sudah tersimpan ke akun");
-    }
-    const c = await fetchCloud(); S.state = c.state || S.state; S.months = c.months; S.synced = c.synced; S.syncedMonth = c.syncedMonth; S.fetchedAt = Date.now(); S.offline = false;
-    snapSave(); if (!sheetOpen()) render(); else renderStatus();
-  } catch (e) {}
-  S.resyncing = false;
-}
-window.addEventListener("online", () => setTimeout(resync, 1500));
-async function enterCloud(session) {
-  me = session.user; S.mode = "supa"; S.loading = true; render();
+function clearLegacy() { try { Object.keys(localStorage).filter(k => k.startsWith("kantong.cloud.")).forEach(k => localStorage.removeItem(k)); } catch (e) {} }
+const countTx = m => Object.values(m || {}).reduce((a, x) => a + Object.keys(x.tx || {}).length, 0);
+async function enterCloud(user) {
+  me = { id: user.uid, email: user.email || "", user_metadata: { full_name: user.displayName || "" } };
+  S.mode = "cloud"; S.loading = true; render();
   let c;
   try { c = await fetchCloud(); }
-  catch (e) {
-    const snap = snapLoad(session.user.id);
-    if (snap) return enterSnapshot(session.user, snap);
-    toast("Tidak bisa memuat data akun. Periksa koneksi, lalu muat ulang halaman."); S.loading = false; S.mode = "local"; enterLocal(); return;
-  }
-  const prev = snapLoad(session.user.id);
-  if (prev && prev.dirty) { S.state = normalize(prev.state); S.months = prev.months || {}; S.synced = prev.synced || {}; S.syncedMonth = prev.syncedMonth || {}; S.dirty = true; S.loading = false; S.demo = false; render(); resync(); return; }
+  catch (e) { toast("Tidak bisa memuat data akun (" + (e.code || e.message) + "). Catatan disimpan di browser ini dulu."); S.loading = false; enterLocal(); return; }
   S.demo = false; S.loading = false;
   S.state = c.state || defaultState(); S.months = c.months; S.synced = c.synced; S.syncedMonth = c.syncedMonth; S.fetchedAt = Date.now();
-  const local = loadLocal();
-  const localCount = local ? Object.values(local.months).reduce((a, m) => a + Object.keys(m.tx || {}).length, 0) : 0;
-  if (localCount && !c.count && !c.state) { mergeLocal(local, true); toast(`${localCount} catatan dari browser ini dipindahkan ke akunmu`); }
-  else if (!c.state) saveState();
+  if (!c.state && !c.count && !c.fromCache) {
+    const legacy = legacyCloudData(), local = loadLocal();
+    const src = legacy && countTx(legacy.months) ? legacy : (local && countTx(local.months) ? local : legacy || local);
+    if (src) {
+      mergeLocal(src, true);
+      if (src === legacy) { clearLegacy(); toast(`${countTx(src.months)} catatan dari versi sebelumnya dipindahkan ke akunmu`); }
+      else toast(`${countTx(src.months)} catatan dari browser ini dipindahkan ke akunmu`);
+    } else saveState();
+  } else clearLegacy();
+  const local = loadLocal(), localCount = local ? countTx(local.months) : 0;
   S.pendingLocal = localCount && (c.count || c.state) ? localCount : 0;
-  S.offline = false; snapSave();
   render();
 }
 function mergeLocal(local, replaceState) {
@@ -634,7 +598,7 @@ function mergeLocal(local, replaceState) {
     if (!(S.months[k] && S.months[k].tx[id])) { (S.months[k] ||= { tx: {} }).tx[id] = t; touched.add(k); }
   }
   saveState(); touched.forEach(saveMonth);
-  try { localStorage.setItem(LS_KEY + ".dipindahkan", localStorage.getItem(LS_KEY) || ""); localStorage.removeItem(LS_KEY); } catch (e) {}
+  try { if (localStorage.getItem(LS_KEY)) { localStorage.setItem(LS_KEY + ".dipindahkan", localStorage.getItem(LS_KEY)); localStorage.removeItem(LS_KEY); } } catch (e) {}
   S.pendingLocal = 0;
 }
 function enterLocal() {
@@ -643,50 +607,66 @@ function enterLocal() {
   if (l) { S.state = l.state; S.months = l.months; } else { S.state = defaultState(); S.months = {}; }
   render();
 }
+const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 async function signIn() {
-  if (!sb) { toast("Login belum tersedia. Coba muat ulang halaman."); return; }
-  const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
-  if (error) toast("Tidak bisa membuka login Google: " + error.message);
+  if (!auth) { toast(navigator.onLine ? "Login belum tersedia. Coba muat ulang halaman." : "Login Google butuh internet."); return; }
+  if (!navigator.onLine) { toast("Login Google butuh internet."); return; }
+  const provider = new fb.GoogleAuthProvider(); provider.setCustomParameters({ prompt: "select_account" });
+  const sameOriginAuth = FB_CFG.authDomain === location.host;
+  try {
+    if (sameOriginAuth && (isStandalone() || isMobile())) await fb.signInWithRedirect(auth, provider);
+    else await fb.signInWithPopup(auth, provider);
+  } catch (e) {
+    if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") && sameOriginAuth) return fb.signInWithRedirect(auth, provider);
+    if (e && (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request")) return;
+    toast("Login Google gagal: " + (e && (e.code || e.message)));
+  }
+}
+async function fbSignOut() {
+  try { if (auth) await fb.signOut(auth); } catch (e) {}
+  // Hapus salinan data akun di perangkat ini (penting untuk HP yang dipakai bersama)
+  try { if (fdb) { await fb.terminate(fdb); await fb.clearIndexedDbPersistence(fdb); } } catch (e) {}
+  fdb = null; clearLegacy();
 }
 async function signOut() {
-  if (S.saving) { toast("Tunggu sebentar, masih menyimpan…"); return; }
-  await sb.auth.signOut(); snapClear(); enterLocal(); toast("Kamu sudah keluar");
+  if (S.pending && navigator.onLine) { toast("Tunggu sebentar, masih menyimpan…"); return; }
+  if (S.pending && !navigator.onLine) { toast("Ada catatan yang belum terkirim. Sambungkan ke internet dulu sebelum keluar."); return; }
+  await fbSignOut(); enterLocal(); toast("Kamu sudah keluar");
 }
-function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
+function initDb() {
+  if (fdb) return fdb;
+  try { fdb = fb.initializeFirestore(fb.app, { localCache: fb.persistentLocalCache({ tabManager: fb.persistentMultipleTabManager() }) }); }
+  catch (e) { fdb = fb.getFirestore(fb.app); }
+  return fdb;
+}
 async function boot() {
-  if (!SUPA_ON) { enterLocal(); return; }
+  if (!CLOUD_ON) { enterLocal(); return; }
   try {
-    await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js");
-    sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" } });
-    const authErr = (() => {
-      const q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.replace(/^#/, ""));
-      const d = q.get("error_description") || h.get("error_description") || q.get("error") || h.get("error");
-      return d ? decodeURIComponent(d.replace(/\+/g, " ")) : "";
-    })();
-    if (authErr) { try { history.replaceState(null, "", location.pathname); } catch (e) {} }
-    const { data } = await sb.auth.getSession();
-    if (authErr && !data.session) setTimeout(() => toast("Login Google gagal. Coba lagi sebentar lagi. (" + authErr.slice(0, 80) + ")"), 300);
-    if (data.session) await enterCloud(data.session);
-    else {
-      let last = null; try { last = JSON.parse(localStorage.getItem(SNAP_LAST) || "null"); } catch (e) {}
-      const snap = last && !navigator.onLine ? snapLoad(last.id) : null;
-      if (snap) enterSnapshot(last, snap); else enterLocal();
-    }
-    sb.auth.onAuthStateChange((ev, session) => {
-      if (ev === "SIGNED_IN" && session && (!me || me.id !== session.user.id)) enterCloud(session);
-      if (ev === "SIGNED_OUT" && S.mode === "supa" && navigator.onLine) { snapClear(); enterLocal(); }
+    const [appM, authM, fsM] = await Promise.all([import(FB_CDN + "firebase-app.js"), import(FB_CDN + "firebase-auth.js"), import(FB_CDN + "firebase-firestore.js")]);
+    fb = Object.assign({}, authM, fsM);
+    const authDomain = /netlify\.app$/.test(location.hostname) ? location.host : FB_CFG.authDomain;
+    FB_CFG.authDomain = authDomain;
+    fb.app = appM.initializeApp(Object.assign({}, FB_CFG, { authDomain }));
+    auth = fb.initializeAuth(fb.app, { persistence: [fb.indexedDBLocalPersistence, fb.browserLocalPersistence], popupRedirectResolver: fb.browserPopupRedirectResolver });
+    auth.languageCode = "id";
+    fb.getRedirectResult(auth).catch(e => { if (e && e.code !== "auth/no-auth-event") toast("Login Google gagal: " + (e.code || e.message)); });
+    let first = true;
+    fb.onAuthStateChanged(auth, user => {
+      const wasFirst = first; first = false;
+      if (user) { if (!me || me.id !== user.uid) { initDb(); enterCloud(user); } }
+      else if (S.mode === "cloud" || wasFirst) enterLocal();
     });
     document.addEventListener("visibilitychange", async () => {
-      if (document.visibilityState !== "visible" || S.mode !== "supa" || S.saving || S.demo || S.dirty || !navigator.onLine || Date.now() - (S.fetchedAt || 0) < 60000) return;
-      try { const c = await fetchCloud(); if (S.saving) return; S.state = c.state || S.state; S.months = c.months; S.synced = c.synced; S.syncedMonth = c.syncedMonth; S.fetchedAt = Date.now(); if (!sheetOpen()) render(); } catch (e) {}
+      if (document.visibilityState !== "visible" || S.mode !== "cloud" || S.pending || S.demo || !navigator.onLine || Date.now() - (S.fetchedAt || 0) < 60000) return;
+      try { const c = await fetchCloud(); if (S.pending) return; S.state = c.state || S.state; S.months = c.months; S.synced = c.synced; S.syncedMonth = c.syncedMonth; S.fetchedAt = Date.now(); if (!sheetOpen()) render(); } catch (e) {}
     });
+    window.addEventListener("online", renderStatus); window.addEventListener("offline", renderStatus);
   } catch (e) {
-    let last = null; try { last = JSON.parse(localStorage.getItem(SNAP_LAST) || "null"); } catch (err) {}
-    const snap = last ? snapLoad(last.id) : null;
-    if (snap && !navigator.onLine) { enterSnapshot(last, snap); return; }
     enterLocal(); toast(navigator.onLine ? "Login sedang tidak tersedia. Catatan disimpan di browser ini dulu." : "Sedang offline. Catatan disimpan di browser ini dulu.");
   }
 }
+function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
 
 /* ---------- derived ---------- */
 const cats = () => S.state.categories;
@@ -745,15 +725,15 @@ function renderShell() {
 }
 function statusHTML() {
   if (S.demo) return `<span class="status"><i class="local"></i>Data contoh, tidak disimpan</span>`;
-  if (S.mode === "supa" && (S.dirty || S.offline)) return `<span class="status"><i class="local"></i>${S.dirty ? "Offline · menunggu sinkron" : "Offline · salinan terakhir"}</span>`;
-  if (S.mode === "supa") return `<span class="status"><i></i>${S.saving ? "Menyimpan…" : "Tersinkron ke akun"}</span>`;
+  if (S.mode === "cloud" && !navigator.onLine) return `<span class="status"><i class="local"></i>${S.pending ? "Offline · menunggu sinkron" : "Offline · data tersimpan di perangkat"}</span>`;
+  if (S.mode === "cloud") return `<span class="status"><i></i>${S.pending ? "Menyimpan…" : "Tersinkron ke akun"}</span>`;
   return `<span class="status"><i class="local"></i>Tersimpan di browser ini</span>`;
 }
 function renderStatus() { document.querySelectorAll("[data-status]").forEach(el => el.innerHTML = statusHTML()); }
 const sheetOpen = () => !!sheetClose;
 function accountHTML(compact) {
-  if (!SUPA_ON) return "";
-  if (S.mode === "supa" && me) {
+  if (!CLOUD_ON) return "";
+  if (S.mode === "cloud" && me) {
     const name = (me.user_metadata && (me.user_metadata.full_name || me.user_metadata.name)) || me.email;
     return `<div class="acct"><div class="acct-who"><b>${esc(name)}</b><span>${esc(me.email || "")}</span></div><button class="btn sm" data-act="signout">Keluar</button></div>`;
   }
@@ -772,7 +752,7 @@ function render() {
   renderShell();
   const v = UI.view;
   const fn = { home: vHome, history: vHistory, report: vReport, more: vMore, budget: vBudget, wallets: vWallets, recurring: vRecurring, goals: vGoals, categories: vCategories, security: vSecurity, data: vData }[v] || vHome;
-  const mergeBar = !S.demo && S.mode === "supa" && S.pendingLocal ? `<div class="banner"><span>Ada ${S.pendingLocal} catatan di browser ini yang belum masuk ke akunmu.</span><span style="display:flex;gap:6px"><button class="btn sm" data-act="mergeSkip">Abaikan</button><button class="btn sm primary" data-act="merge">Pindahkan ke akun</button></span></div>` : "";
+  const mergeBar = !S.demo && S.mode === "cloud" && S.pendingLocal ? `<div class="banner"><span>Ada ${S.pendingLocal} catatan di browser ini yang belum masuk ke akunmu.</span><span style="display:flex;gap:6px"><button class="btn sm" data-act="mergeSkip">Abaikan</button><button class="btn sm primary" data-act="merge">Pindahkan ke akun</button></span></div>` : "";
   const demoBar = mergeBar + (S.demo ? `<div class="banner"><span>Kamu sedang melihat data contoh. Perubahan tidak disimpan.</span><button class="btn sm" data-act="exitDemo">Mulai dengan data sendiri</button></div>` : "");
   $("#main").innerHTML = demoBar + fn();
   if (v === "history") renderHistoryList();
@@ -809,7 +789,7 @@ function vHome() {
   const welcome = !hasData() && !S.demo ? `<div class="card welcome" style="margin-bottom:14px"><div><h2 style="font-size:20px">Catat uangmu dalam 3 detik</h2>
      <ol><li>Tekan tombol <b>+</b> lalu ketik seperti chat, misalnya <b>kopi susu 25rb</b>, atau foto struk belanja dengan <b>Scan struk</b>.</li><li>Kategori dan jumlah terisi otomatis. Tekan <b>Simpan</b>.</li><li>Atur saldo awal di <b>Dompet</b> agar total saldo sesuai.</li></ol>
      <div class="acts"><button class="btn primary" data-act="add">${ICON.plus.replace("<svg", '<svg width="18" height="18"')}Catat transaksi pertama</button><button class="btn" data-act="scan">${ICON.camera.replace("<svg", '<svg width="18" height="18"')}Scan struk</button><button class="btn" data-act="demo">Lihat dengan data contoh</button></div></div>
-     <div class="muted small"><span data-status>${statusHTML()}</span>${S.mode === "supa" ? `<p>Catatanmu tersinkron ke akun Google-mu, jadi bisa dibuka dari HP dan laptop mana pun. Hanya kamu yang bisa membaca dan mengubahnya.</p>` : SUPA_ON ? `<p>Bisa langsung dipakai tanpa daftar; catatan tersimpan di browser ini. Masuk dengan Google agar catatanmu tersimpan aman dan bisa dibuka dari perangkat lain.</p><div style="margin-top:10px">${accountHTML()}</div>` : `<p>Catatan tersimpan di browser ini saja. Unduh cadangan secara berkala di menu Data.</p>`}<p><a href="privasi.html">Kebijakan privasi</a></p></div></div>` : "";
+     <div class="muted small"><span data-status>${statusHTML()}</span>${S.mode === "cloud" ? `<p>Catatanmu tersinkron ke akun Google-mu, jadi bisa dibuka dari HP dan laptop mana pun. Hanya kamu yang bisa membaca dan mengubahnya.</p>` : CLOUD_ON ? `<p>Bisa langsung dipakai tanpa daftar; catatan tersimpan di browser ini. Masuk dengan Google agar catatanmu tersimpan aman dan bisa dibuka dari perangkat lain.</p><div style="margin-top:10px">${accountHTML()}</div>` : `<p>Catatan tersimpan di browser ini saja. Unduh cadangan secara berkala di menu Data.</p>`}<p><a href="privasi.html">Kebijakan privasi</a></p></div></div>` : "";
 
   const due = dueRecurring().slice(0, 4);
   const dueCard = due.length ? `<div class="card"><div class="card-h"><h2>Tagihan & pemasukan rutin</h2><button class="link" data-go="recurring">Kelola</button></div><div class="list">${due.map(r => {
@@ -990,7 +970,7 @@ function vData() {
   <div class="grid half">
     <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Ekspor ke spreadsheet</h2><p class="muted small">Unduh semua ${n} transaksi sebagai CSV untuk dibuka di Excel atau Google Sheets.</p><button class="btn primary" data-act="csv">Unduh CSV</button></div>
     <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Cadangan lengkap</h2><p class="muted small">Simpan semua data (dompet, kategori, anggaran, target) sebagai file JSON, lalu pulihkan kapan saja.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="backup">Unduh cadangan</button><label class="btn" for="importFile" style="cursor:pointer">Pulihkan dari file</label><input type="file" id="importFile" accept=".json,application/json" hidden></div></div>
-    <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Akun & penyimpanan</h2><p class="muted small">${S.mode === "supa" ? "Data tersimpan di akunmu dan tersinkron ke semua perangkat tempat kamu masuk. Hanya kamu yang bisa membaca dan mengubahnya." : SUPA_ON ? "Data tersimpan di browser ini saja. Masuk dengan Google agar tersimpan di akun dan bisa dibuka dari perangkat lain." : "Data tersimpan di browser ini saja. Unduh cadangan secara berkala agar tidak hilang."}</p><div style="display:flex;flex-direction:column;gap:10px"><span data-status>${statusHTML()}</span>${accountHTML()}<a class="small" href="privasi.html">Kebijakan privasi</a></div></div>
+    <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Akun & penyimpanan</h2><p class="muted small">${S.mode === "cloud" ? "Data tersimpan di akunmu dan tersinkron ke semua perangkat tempat kamu masuk. Hanya kamu yang bisa membaca dan mengubahnya." : CLOUD_ON ? "Data tersimpan di browser ini saja. Masuk dengan Google agar tersimpan di akun dan bisa dibuka dari perangkat lain." : "Data tersimpan di browser ini saja. Unduh cadangan secara berkala agar tidak hilang."}</p><div style="display:flex;flex-direction:column;gap:10px"><span data-status>${statusHTML()}</span>${accountHTML()}<a class="small" href="privasi.html">Kebijakan privasi</a></div></div>
     <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Hapus semua data</h2><p class="muted small">Menghapus semua transaksi dan pengaturan. Tidak bisa dibatalkan.</p><button class="btn danger" data-act="wipe" ${S.demo ? "disabled" : ""}>Hapus semua</button></div>
   </div>`;
 }
@@ -1356,7 +1336,7 @@ function importBackup(file) {
       $("#doImp", el).onclick = () => {
         S.demo = false; const old = Object.keys(S.months);
         S.state = normalize(d.state); S.months = d.months;
-        saveState(); if (S.mode === "supa") { new Set([...old, ...Object.keys(S.months)]).forEach(k => saveMonth(k)); } else saveLocal();
+        saveState(); if (S.mode === "cloud") { new Set([...old, ...Object.keys(S.months)]).forEach(k => saveMonth(k)); } else saveLocal();
         sheetClose(); render(); toast("Cadangan dipulihkan");
       };
     });
@@ -1366,7 +1346,7 @@ function importBackup(file) {
 function wipeAll() {
   openSheet("Hapus semua data", `<p>Semua transaksi, dompet, anggaran, tagihan rutin, dan target akan dihapus. Ini tidak bisa dibatalkan.</p><p class="small muted">Saran: unduh cadangan dulu.</p><div class="actions"><button class="btn" data-close3>Batal</button><button class="btn danger" id="doWipe">Ya, hapus semua</button></div>`, el => {
     el.querySelector("[data-close3]").onclick = () => sheetClose();
-    $("#doWipe", el).onclick = () => { const old = Object.keys(S.months); S.months = {}; S.state = defaultState(); saveState(); if (S.mode === "supa") old.forEach(k => saveMonth(k)); else saveLocal(); sheetClose(); UI.view = "home"; render(); toast("Semua data dihapus"); };
+    $("#doWipe", el).onclick = () => { const old = Object.keys(S.months); S.months = {}; S.state = defaultState(); saveState(); if (S.mode === "cloud") old.forEach(k => saveMonth(k)); else saveLocal(); sheetClose(); UI.view = "home"; render(); toast("Semua data dihapus"); };
   });
 }
 
@@ -1404,7 +1384,7 @@ document.addEventListener("click", e => {
     case "mPrev": UI.month = shiftMonth(UI.month, -1); return render();
     case "mNext": UI.month = shiftMonth(UI.month, 1); return render();
     case "demo": { const dm = makeDemo(); S.demo = true; S.state = dm.state; S.months = dm.months; render(); toast("Data contoh dimuat"); return; }
-    case "exitDemo": { S.demo = false; if (S.mode === "supa") { enterCloud({ user: me }); } else { const l = loadLocal(); S.state = l ? l.state : defaultState(); S.months = l ? l.months : {}; render(); } return; }
+    case "exitDemo": { S.demo = false; if (S.mode === "cloud" && auth && auth.currentUser) { enterCloud(auth.currentUser); } else { const l = loadLocal(); S.state = l ? l.state : defaultState(); S.months = l ? l.months : {}; render(); } return; }
     case "signin": return signIn();
     case "signout": return signOut();
     case "merge": { const l = loadLocal(); if (l) { mergeLocal(l, false); render(); toast("Catatan browser dipindahkan ke akunmu"); } else { S.pendingLocal = 0; render(); } return; }
@@ -1513,12 +1493,12 @@ function unlock() { Lock.locked = false; document.body.classList.remove("is-lock
 function renderForgot() {
   const box = $("#forgotBox"); if (!box) return;
   if (S.mode === "loading" || S.loading) { box.innerHTML = `<div class="forgot"><p>Tunggu sebentar, masih memuat…</p></div>`; setTimeout(renderForgot, 800); return; }
-  if (S.mode === "supa") {
+  if (S.mode === "cloud") {
     box.innerHTML = `<div class="forgot"><p>Keluar dari akun Google di perangkat ini untuk menghapus PIN. Catatanmu tetap aman di akun dan muncul lagi setelah kamu masuk.</p><button type="button" class="btn primary" id="fpOut">Keluar & hapus PIN</button></div>`;
     $("#fpOut").onclick = async () => {
-      try { await sb.auth.signOut(); } catch (e) {}
+      await fbSignOut();
       try { localStorage.removeItem(LS_KEY); } catch (e) {}
-      snapClear(); Lock.clear(); enterLocal(); unlock(); toast("PIN dihapus. Masuk lagi dengan Google untuk melihat catatanmu.");
+      Lock.clear(); enterLocal(); unlock(); toast("PIN dihapus. Masuk lagi dengan Google untuk melihat catatanmu.");
     };
   } else {
     box.innerHTML = `<div class="forgot"><p>Catatanmu hanya tersimpan di browser ini, jadi PIN tidak bisa dipulihkan. Menghapus PIN juga <b>menghapus semua catatan di perangkat ini</b>.</p><button type="button" class="btn danger" id="fpWipe">Hapus PIN & semua catatan</button></div>`;
@@ -1565,7 +1545,7 @@ function vSecurity() {
     </div>
     ${on ? `<div class="card"><h2 style="font-size:16px;margin-bottom:6px">Kunci otomatis</h2><p class="muted small">Minta PIN lagi setelah Kantong ditinggal, misalnya pindah aplikasi, buka tab lain, atau layar mati.</p>
       <div class="seg">${[[0, "Langsung"], [1, "1 menit"], [5, "5 menit"], [15, "15 menit"]].map(([v, l]) => `<button data-after="${v}" aria-pressed="${after === v}">${l}</button>`).join("")}</div></div>` : ""}
-    <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Kalau lupa PIN</h2><p class="muted small">${S.mode === "supa" ? "Pilih <b>Lupa PIN?</b> di layar kunci, lalu keluar dari akun. Catatanmu tetap aman di akun Google-mu. Setelah masuk lagi, pasang PIN baru." : "Catatanmu hanya tersimpan di browser ini, jadi lupa PIN berarti catatan di perangkat ini harus dihapus. Masuk dengan Google atau unduh cadangan berkala supaya tetap aman."}</p></div>
+    <div class="card"><h2 style="font-size:16px;margin-bottom:6px">Kalau lupa PIN</h2><p class="muted small">${S.mode === "cloud" ? "Pilih <b>Lupa PIN?</b> di layar kunci, lalu keluar dari akun. Catatanmu tetap aman di akun Google-mu. Setelah masuk lagi, pasang PIN baru." : "Catatanmu hanya tersimpan di browser ini, jadi lupa PIN berarti catatan di perangkat ini harus dihapus. Masuk dengan Google atau unduh cadangan berkala supaya tetap aman."}</p></div>
   </div>`;
 }
 document.addEventListener("visibilitychange", () => {

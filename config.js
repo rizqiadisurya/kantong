@@ -1,9 +1,13 @@
-// Pengaturan Supabase untuk Kantong.
-// Isi dua nilai ini dari Supabase → Project Settings → API.
-// anon public key memang boleh ada di website ini: datanya dilindungi Row Level Security.
-// JANGAN pernah menaruh service_role key di sini.
-// Selama kosong, Kantong tetap berjalan dalam mode tamu (data di browser).
+// Pengaturan Firebase untuk Kantong (Firebase Console → Project settings → Your apps).
+// Nilai ini memang publik dan boleh ada di website: data dilindungi aturan keamanan Firestore
+// (lihat firestore.rules). Kosongkan objek firebase untuk menjalankan Kantong tanpa akun.
 window.KANTONG_CONFIG = {
-  supabaseUrl: "https://rthgzbwznmepwauagoti.supabase.co",
-  supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0aGd6Ynd6bm1lcHdhdWFnb3RpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0ODU2ODgsImV4cCI6MjEwNzA2MTY4OH0.cOei-78AKEumip8DTEg8ZZE4eCTxqtiKkltFLCGARCQ"
+  firebase: {
+    apiKey: "AIzaSyAaOshe-WloT-Edl_b3lIc0eUs40nsbS3w",
+    authDomain: "kantong-511100.firebaseapp.com",
+    projectId: "kantong-511100",
+    storageBucket: "kantong-511100.firebasestorage.app",
+    messagingSenderId: "474677536426",
+    appId: "1:474677536426:web:38cf94a4bac651b8d312d3"
+  }
 };

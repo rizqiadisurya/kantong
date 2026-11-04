@@ -1,9 +1,9 @@
 /* Kantong service worker: aplikasi tetap terbuka saat offline.
- * Data akun (Supabase) tidak pernah disimpan di cache ini. */
-const VERSION = "kantong-v1";
+ * Data akun disimpan Firestore sendiri (IndexedDB), bukan di cache ini. */
+const VERSION = "kantong-v2";
 const SHELL = ["./", "index.html", "struk.js", "config.js", "privasi.html", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
-const CDN = /^https:\/\/(cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
+const CDN = /^https:\/\/(cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com|www\.gstatic\.com\/firebasejs)\//;
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -42,10 +42,11 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin === self.location.origin) {
+    if (url.pathname.startsWith("/__/")) return; // login Firebase: selalu ke jaringan
     if (req.mode === "navigate") return e.respondWith(networkFirst(req, "index.html"));
     if (url.pathname.endsWith("/config.js") || url.pathname.endsWith("/sw.js")) return e.respondWith(networkFirst(req));
     return e.respondWith(staleWhileRevalidate(req));
   }
   if (CDN.test(req.url)) return e.respondWith(cacheFirst(req));
-  // Supabase, Google, dan lainnya: langsung ke jaringan, tidak di-cache.
+  // Firestore, login Google, dan lainnya: langsung ke jaringan, tidak di-cache.
 });

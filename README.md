@@ -4,7 +4,7 @@ Aplikasi pencatatan keuangan pribadi yang semudah chat: ketik `kopi susu 25rb`, 
 
 **Buka aplikasinya:** https://kantong-keuangan.netlify.app/ (cadangan: https://rizqiadisurya.github.io/kantong/)
 
-Panduan menyiapkan login Google, Supabase, dan Netlify: lihat [SETUP.md](SETUP.md).
+Panduan menyiapkan login Google, Firebase, dan Netlify: lihat [SETUP.md](SETUP.md).
 
 ## Fitur
 - Ketik cepat: jumlah, kategori, dan catatan terisi otomatis
@@ -15,9 +15,9 @@ Panduan menyiapkan login Google, Supabase, dan Netlify: lihat [SETUP.md](SETUP.m
 - Target tabungan
 - Laporan bulanan dan tren 6 bulan
 - Ekspor CSV, cadangan & pulihkan (JSON)
-- Masuk dengan Google & sinkron antarperangkat (Supabase)
+- Masuk dengan Google & sinkron antarperangkat (Firebase Auth + Firestore, tetap jalan offline)
 - Bisa dipasang di Home Screen iPhone/Android (PWA) dan tetap terbuka saat offline
 - Kunci PIN 6 angka per perangkat, dengan kunci otomatis saat aplikasi ditinggal
 
 ## Privasi
-Bisa dipakai tanpa akun (data di browser). Masuk dengan Google untuk menyinkronkan catatan antarperangkat; data dikunci per pengguna dengan Row Level Security Supabase. Lihat [privasi.html](privasi.html).
+Bisa dipakai tanpa akun (data di browser). Masuk dengan Google untuk menyinkronkan catatan antarperangkat; data dikunci per pengguna dengan aturan keamanan Firestore ([firestore.rules](firestore.rules)). Lihat [privasi.html](privasi.html).
